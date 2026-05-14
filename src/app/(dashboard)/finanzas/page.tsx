@@ -28,7 +28,7 @@ export default function FinanzasPage() {
       
       if (error) throw error
       
-      return (data || []).map(t => ({
+      return (data || []).map((t: any) => ({
         id: t.uuid,
         fecha: t.fecha,
         tipo: t.tipo?.toLowerCase() === 'ingreso' ? 'ingreso' : 'egreso',
