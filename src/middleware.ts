@@ -1,8 +1,10 @@
-import { type NextRequest } from 'next/server'
-import { updateSession } from './lib/supabase/middleware'
+import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  return await updateSession(request)
+  // Desactivamos temporalmente el chequeo de sesión de Supabase aquí 
+  // para evitar el error de Edge Runtime (__dirname is not defined) en Vercel.
+  // La sesión se manejará desde el cliente.
+  return NextResponse.next()
 }
 
 export const config = {
