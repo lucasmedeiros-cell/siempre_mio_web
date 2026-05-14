@@ -5,7 +5,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Al poner una ruta que no existe, Vercel nunca ejecutará este middleware 
-  // y por lo tanto ya no dará el error 500
-  matcher: ['/ruta-desactivada-por-error-de-vercel'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }

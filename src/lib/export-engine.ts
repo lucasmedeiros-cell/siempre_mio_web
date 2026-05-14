@@ -1,5 +1,3 @@
-import { jsPDF } from "jspdf"
-import "jspdf-autotable"
 import { formatInTimeZone } from 'date-fns-tz'
 
 export function exportToCSV<T>(data: T[], filename: string) {
@@ -29,8 +27,13 @@ export function exportToCSV<T>(data: T[], filename: string) {
   document.body.removeChild(link)
 }
 
-export function exportToPDF<T>(data: T[], filename: string, title: string) {
+export async function exportToPDF<T>(data: T[], filename: string, title: string) {
   if (!data || !data.length) return
+
+  const jsPDFModule = await import("jspdf")
+  const autoTableModule = await import("jspdf-autotable")
+  const jsPDF = jsPDFModule.default || jsPDFModule.jsPDF || (jsPDFModule as any)
+  const autoTable = autoTableModule.default
 
   const doc = new jsPDF()
   
@@ -69,7 +72,7 @@ export function exportToPDF<T>(data: T[], filename: string, title: string) {
   doc.save(`${filename}.pdf`)
 }
 
-export function generateEndOfDayReport(fincaId: string | null) {
+export async function generateEndOfDayReport(fincaId: string | null) {
   // Simulación de recolección de datos del cierre de día (leche, finanzas, salud)
   const reportData = [
     { Categoria: "Producción de Leche", Cantidad: "450 Litros", IngresoEstimado: "1350 BOB" },
@@ -81,7 +84,7 @@ export function generateEndOfDayReport(fincaId: string | null) {
   const boliviaTz = 'America/La_Paz'
   const dateStr = formatInTimeZone(new Date(), boliviaTz, 'yyyy-MM-dd')
   
-  exportToPDF(
+  await exportToPDF(
     reportData, 
     `Cierre_Dia_${dateStr}${fincaId ? `_${fincaId}` : ''}`, 
     `Reporte de Cierre de Día - Siempre Mío`

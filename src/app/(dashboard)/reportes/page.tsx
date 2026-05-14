@@ -9,8 +9,6 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import jsPDF from "jspdf"
-import autoTable from "jspdf-autotable"
 
 const REPORT_TYPES = [
   { id: 'inventario_general', title: 'Inventario General del Hato', description: 'Lista completa de animales activos, categorías y estados.' },
@@ -33,6 +31,12 @@ export default function ReportesPage() {
 
     setLoading(true)
     try {
+      // Importación dinámica para evitar que Vercel incluya jspdf en el Edge Runtime
+      const jsPDFModule = await import("jspdf")
+      const autoTableModule = await import("jspdf-autotable")
+      const jsPDF = jsPDFModule.default || jsPDFModule.jsPDF || (jsPDFModule as any)
+      const autoTable = autoTableModule.default
+      
       const doc = new jsPDF()
       const pageWidth = doc.internal.pageSize.getWidth()
       
