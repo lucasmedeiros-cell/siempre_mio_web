@@ -9,6 +9,17 @@ import { Plus, Beef, UtensilsCrossed, Calculator, Info, TrendingUp, History } fr
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface Receta {
   uuid: string
@@ -24,6 +35,15 @@ export default function ConfinamientoPage() {
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
+  const [openRegister, setOpenRegister] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    nombre: "",
+    proteinaTotal: "",
+    costoTotal: "",
+    ingredientes: ""
+  })
+
   useEffect(() => {
     fetchRecetas()
   }, [fincaId])
@@ -31,8 +51,8 @@ export default function ConfinamientoPage() {
   async function fetchRecetas() {
     setLoading(true)
     try {
-      let query = supabase
-        .from('recetas_info')
+      let query = (supabase
+        .from('recetas_info') as any)
         .select('*')
         .eq('deleted', false)
 
@@ -51,6 +71,48 @@ export default function ConfinamientoPage() {
     }
   }
 
+  async function handleCreateReceta(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.nombre || !form.proteinaTotal || !form.costoTotal) return
+
+    setIsSubmitting(true)
+    try {
+      const ingredientesList = form.ingredientes
+        ? form.ingredientes.split(',').map(i => i.trim()).filter(Boolean)
+        : []
+      
+      const payload = {
+        uuid: crypto.randomUUID(),
+        nombre: form.nombre,
+        proteinaTotal: parseFloat(form.proteinaTotal),
+        costoTotal: parseFloat(form.costoTotal),
+        ingredientesJson: JSON.stringify(ingredientesList),
+        propietarioId: fincaId || null,
+        deleted: false,
+        synced: true,
+        updatedAt: new Date().toISOString()
+      }
+
+      const { error } = await (supabase.from('recetas_info') as any).insert([payload])
+      if (error) throw error
+
+      toast.success("Receta de dieta creada correctamente")
+      setOpenRegister(false)
+      setForm({
+        nombre: "",
+        proteinaTotal: "",
+        costoTotal: "",
+        ingredientes: ""
+      })
+      fetchRecetas()
+    } catch (error) {
+      console.error("Error creating receta:", error)
+      toast.error("Error al crear la receta")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -60,13 +122,86 @@ export default function ConfinamientoPage() {
             Gestión nutricional y formulación de raciones para engorde.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-2">
             <History className="w-4 h-4" /> Historial de Carga
           </Button>
-          <Button className="gap-2">
-            <Plus className="w-4 h-4" /> Nueva Receta
-          </Button>
+          <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+            <DialogTrigger
+              render={
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" /> Nueva Receta
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-md">
+              <form onSubmit={handleCreateReceta} className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Nueva Receta de Dieta</DialogTitle>
+                  <DialogDescription>
+                    Registra una fórmula de ración alimenticia para el ganado.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="nombre">Nombre de la Receta (Requerido)</Label>
+                    <Input
+                      id="nombre"
+                      placeholder="Ej. Engorde Rápido Fase 1"
+                      value={form.nombre}
+                      onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="proteinaTotal">Proteína Total (%)</Label>
+                      <Input
+                        id="proteinaTotal"
+                        type="number"
+                        step="0.1"
+                        placeholder="Ej. 14.5"
+                        value={form.proteinaTotal}
+                        onChange={(e) => setForm({ ...form, proteinaTotal: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="costoTotal">Costo por kg (Bs.)</Label>
+                      <Input
+                        id="costoTotal"
+                        type="number"
+                        step="0.01"
+                        placeholder="Ej. 2.50"
+                        value={form.costoTotal}
+                        onChange={(e) => setForm({ ...form, costoTotal: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="ingredientes">Ingredientes (Separados por comas)</Label>
+                    <Input
+                      id="ingredientes"
+                      placeholder="Ej. Maíz molido, Harina de soya, Núcleo mineral"
+                      value={form.ingredientes}
+                      onChange={(e) => setForm({ ...form, ingredientes: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter className="pt-2">
+                  <Button type="submit" disabled={isSubmitting} className="w-full">
+                    {isSubmitting ? "Creando..." : "Crear Receta"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

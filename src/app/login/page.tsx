@@ -10,32 +10,70 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 
 export default function LoginPage() {
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [fullName, setFullName] = useState("")
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        toast.error("Error de autenticación", {
-          description: error.message
+      if (mode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
         })
-        return
-      }
 
-      toast.success("Bienvenido a Siempre Mío")
-      router.push("/")
-      router.refresh()
+        if (error) {
+          toast.error("Error de autenticación", {
+            description: error.message
+          })
+          return
+        }
+
+        toast.success("Bienvenido a Siempre Mío")
+        router.push("/")
+        router.refresh()
+      } else {
+        // Register Mode
+        if (!fullName.trim()) {
+          toast.error("Por favor ingresa tu nombre completo")
+          setLoading(false)
+          return
+        }
+        
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin,
+            data: {
+              full_name: fullName,
+              role: "Administrador"
+            }
+          }
+        })
+
+        if (error) {
+          toast.error("Error al registrarse", {
+            description: error.message
+          })
+          return
+        }
+
+        toast.success("Registro exitoso", {
+          description: "Revisa tu correo electrónico para confirmar tu cuenta y acceder al sistema.",
+          duration: 8000,
+        })
+        setMode('login')
+        setFullName("")
+        setPassword("")
+      }
     } catch (err) {
       toast.error("Error inesperado")
     } finally {
@@ -49,27 +87,52 @@ export default function LoginPage() {
         <CardHeader className="space-y-3 text-center">
           <div className="flex justify-center mb-2">
             <div className="h-16 w-16 rounded-xl overflow-hidden flex items-center justify-center">
-              <img src="/logo.png" alt="Logo Siempre Mío" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              <img 
+                src="/logo.png" 
+                alt="Logo Siempre Mío" 
+                className="w-full h-full object-contain" 
+                onError={(e) => { e.currentTarget.style.display = 'none'; }} 
+              />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Siempre Mío</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            {mode === 'login' ? "Siempre Mío" : "Crear Cuenta"}
+          </CardTitle>
           <CardDescription>
-            Ingresa al portal administrativo del hato
+            {mode === 'login' 
+              ? "Ingresa al portal administrativo del hato" 
+              : "Regístrate en Siempre Mío para comenzar"
+            }
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {mode === 'register' && (
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Nombre Completo</Label>
+                <Input 
+                  id="fullName" 
+                  type="text" 
+                  placeholder="Ej. Lucas Parada" 
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required 
+                />
+              </div>
+            )}
+            
             <div className="space-y-2">
               <Label htmlFor="email">Correo electrónico</Label>
               <Input 
                 id="email" 
                 type="email" 
-                placeholder="admin@siempremio.com" 
+                placeholder="ejemplo@siempremio.com" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required 
               />
             </div>
+            
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Contraseña</Label>
@@ -77,16 +140,46 @@ export default function LoginPage() {
               <Input 
                 id="password" 
                 type="password" 
+                placeholder="******"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required 
               />
             </div>
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-4">
             <Button className="w-full" type="submit" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Ingresar"}
+              {loading 
+                ? (mode === 'login' ? "Iniciando sesión..." : "Registrando cuenta...") 
+                : (mode === 'login' ? "Ingresar" : "Registrarse")
+              }
             </Button>
+            
+            <div className="text-center text-sm mt-2">
+              {mode === 'login' ? (
+                <p className="text-muted-foreground">
+                  ¿No tienes cuenta?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className="text-primary hover:underline font-semibold"
+                  >
+                    Regístrate aquí
+                  </button>
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  ¿Ya tienes cuenta?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode('login')}
+                    className="text-primary hover:underline font-semibold"
+                  >
+                    Inicia sesión
+                  </button>
+                </p>
+              )}
+            </div>
           </CardFooter>
         </form>
       </Card>

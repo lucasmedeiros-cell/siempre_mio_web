@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Calendar, Layout, Clock, CheckCircle2, AlertCircle, ChevronRight, Filter } from "lucide-react"
+import { Plus, Calendar, Layout, Clock, CheckCircle2, AlertCircle, ChevronRight, ChevronLeft, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
@@ -42,6 +42,7 @@ const COLUMNS = [
 export default function TareasPage() {
   const [tareas, setTareas] = useState<Tarea[]>([])
   const [loading, setLoading] = useState(true)
+  const [currentDate, setCurrentDate] = useState(new Date())
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
@@ -150,6 +151,55 @@ export default function TareasPage() {
 
   const handleDragStart = (e: React.DragEvent, tareaId: string) => {
     e.dataTransfer.setData("tareaId", tareaId)
+  }
+
+  const year = currentDate.getFullYear()
+  const month = currentDate.getMonth()
+
+  // First day of current month
+  const firstDayOfMonth = new Date(year, month, 1)
+  // Day of week index shifted to Mon-Sun (0-6)
+  const startingDayIndex = (firstDayOfMonth.getDay() + 6) % 7
+  // Total days in current month
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  // Total days in previous month
+  const daysInPrevMonth = new Date(year, month, 0).getDate()
+
+  const gridCells = []
+
+  // Pre-fill days from previous month
+  for (let i = startingDayIndex - 1; i >= 0; i--) {
+    gridCells.push({
+      day: daysInPrevMonth - i,
+      isCurrentMonth: false,
+      dateStr: `${month === 0 ? year - 1 : year}-${String(month === 0 ? 12 : month).padStart(2, '0')}-${String(daysInPrevMonth - i).padStart(2, '0')}`
+    })
+  }
+
+  // Current month days
+  for (let i = 1; i <= daysInMonth; i++) {
+    gridCells.push({
+      day: i,
+      isCurrentMonth: true,
+      dateStr: `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
+    })
+  }
+
+  // Post-fill next month days to complete a 6-week grid (42 cells)
+  const remainingCells = 42 - gridCells.length
+  for (let i = 1; i <= remainingCells; i++) {
+    gridCells.push({
+      day: i,
+      isCurrentMonth: false,
+      dateStr: `${month === 11 ? year + 1 : year}-${String(month === 11 ? 1 : month + 2).padStart(2, '0')}-${String(i).padStart(2, '0')}`
+    })
+  }
+
+  const getTasksForDateStr = (dateStr: string) => {
+    return tareas.filter(t => {
+      if (!t.fechaLimite) return false
+      return t.fechaLimite.split('T')[0] === dateStr
+    })
   }
 
   return (
@@ -335,16 +385,113 @@ export default function TareasPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="calendar" className="mt-0">
+         <TabsContent value="calendar" className="mt-0">
           <Card className="border-border/50">
-            <CardHeader>
-              <CardTitle>Vista de Calendario</CardTitle>
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 gap-4">
+              <div>
+                <CardTitle className="text-xl">Calendario de Actividades</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Vista mensual de tareas programadas. Haz clic en un día para programar.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
+                  type="button"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="font-semibold min-w-[120px] text-center text-sm capitalize">
+                  {format(currentDate, 'MMMM yyyy', { locale: es })}
+                </span>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
+                  type="button"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="h-[600px] flex items-center justify-center text-muted-foreground bg-muted/10 rounded-lg m-4 border border-dashed">
-              <div className="text-center">
-                <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                <p>Módulo de calendario interactivo en desarrollo</p>
-                <p className="text-sm">Próximamente: Integración con FullCalendar</p>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-7 gap-1 text-center font-semibold text-xs text-muted-foreground mb-2">
+                <div>Lun</div>
+                <div>Mar</div>
+                <div>Mié</div>
+                <div>Jue</div>
+                <div>Vie</div>
+                <div>Sáb</div>
+                <div>Dom</div>
+              </div>
+              <div className="grid grid-cols-7 gap-1 bg-muted/20 p-1 rounded-lg border border-border/50">
+                {gridCells.map((cell, idx) => {
+                  const dayTasks = getTasksForDateStr(cell.dateStr)
+                  const isToday = cell.dateStr === new Date().toISOString().split('T')[0]
+                  
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setForm({
+                          ...form,
+                          fechaLimite: cell.dateStr
+                        })
+                        setOpenRegister(true)
+                      }}
+                      className={`min-h-[90px] p-1.5 flex flex-col justify-between rounded-md transition-all cursor-pointer border ${
+                        cell.isCurrentMonth
+                          ? "bg-background/40 hover:bg-background/80 border-border/20 text-foreground"
+                          : "bg-muted/10 border-transparent text-muted-foreground/40 hover:bg-muted/20"
+                      } ${isToday ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className={`text-xs font-bold ${isToday ? "text-primary bg-primary/10 rounded-full h-5 w-5 flex items-center justify-center font-bold" : ""}`}>
+                          {cell.day}
+                        </span>
+                        {dayTasks.length > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-primary/10 text-primary">
+                            {dayTasks.length}
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 flex flex-col justify-end gap-1 mt-1 overflow-hidden">
+                        {dayTasks.slice(0, 2).map((tarea) => {
+                          const priorityColor =
+                            tarea.prioridad === 'Alta' ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400' :
+                            tarea.prioridad === 'Media' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600 dark:text-yellow-400' :
+                            'bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400'
+                          
+                          return (
+                            <div
+                              key={tarea.uuid}
+                              title={tarea.titulo}
+                              className={`text-[9px] truncate px-1 py-0.5 rounded border leading-none font-medium ${priorityColor}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toast.info(`Tarea: ${tarea.titulo}`, {
+                                  description: `Prioridad: ${tarea.prioridad} | Responsable: ${tarea.asignadoA || 'Sin asignar'}`,
+                                });
+                              }}
+                            >
+                              {tarea.titulo}
+                            </div>
+                          )
+                        })}
+                        {dayTasks.length > 2 && (
+                          <div className="text-[8px] text-muted-foreground text-center font-bold">
+                            + {dayTasks.length - 2} más
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

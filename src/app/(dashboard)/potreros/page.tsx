@@ -11,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGlobalStore } from "@/store/global-store"
 import { differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { ArrowRight, Tractor } from "lucide-react"
+import { ArrowRight, Tractor, Plus } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Sheet,
   SheetContent,
@@ -20,6 +22,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 // Extended type for frontend logic
 type Potrero = Database['public']['Tables']['potreros']['Row'] & {
@@ -42,6 +53,56 @@ export default function PotrerosPage() {
   const queryClient = useQueryClient()
   const [selectedPotrero, setSelectedPotrero] = useState<Potrero | null>(null)
   const [destinoId, setDestinoId] = useState<string>("")
+
+  const [openRegister, setOpenRegister] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    nombre: "",
+    superficieHa: "",
+    condicion: "100",
+    estado: "libre"
+  })
+
+  const handleCreatePotrero = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.nombre || !form.superficieHa || !form.condicion) return
+
+    setIsSubmitting(true)
+    try {
+      const supabase = createClient()
+      const payload = {
+        uuid: crypto.randomUUID(),
+        nombre: form.nombre,
+        superficieHa: parseFloat(form.superficieHa),
+        condicion: parseFloat(form.condicion) / 100,
+        estado: form.estado === 'ocupado' ? 'Ocupado' : form.estado === 'descanso' ? 'Descanso' : 'Libre',
+        alturaPastoMetros: 0.2,
+        diasDescanso: 0,
+        fechaUltimaLiberacion: null,
+        deleted: false,
+        synced: true,
+        updatedAt: new Date().toISOString()
+      }
+
+      const { error } = await (supabase.from('potreros') as any).insert([payload])
+      if (error) throw error
+
+      toast.success("Potrero creado exitosamente")
+      setOpenRegister(false)
+      setForm({
+        nombre: "",
+        superficieHa: "",
+        condicion: "100",
+        estado: "libre"
+      })
+      queryClient.invalidateQueries({ queryKey: ['potreros'] })
+    } catch (error: any) {
+      console.error("Error creating potrero:", error)
+      toast.error(error.message || "Error al crear el potrero")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const { data: potreros = [] } = useQuery({
     queryKey: ['potreros', fincaId],
@@ -89,11 +150,96 @@ export default function PotrerosPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Mapa de Potreros</h1>
-        <p className="text-muted-foreground">
-          Visualización de la cuadrícula interactiva. Gestiona la rotación de lotes y evalúa los días de ocupación.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Mapa de Potreros</h1>
+          <p className="text-muted-foreground">
+            Visualización de la cuadrícula interactiva. Gestiona la rotación de lotes y evalúa los días de ocupación.
+          </p>
+        </div>
+        <div>
+          <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+            <DialogTrigger
+              render={
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" /> Nuevo Potrero
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-md">
+              <form onSubmit={handleCreatePotrero} className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Nuevo Potrero</DialogTitle>
+                  <DialogDescription>
+                    Registra un nuevo potrero en el sistema para control de rotación.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="nombre">Nombre del Potrero (Requerido)</Label>
+                    <Input
+                      id="nombre"
+                      placeholder="Ej. Potrero Norte A"
+                      value={form.nombre}
+                      onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="superficieHa">Superficie (Ha)</Label>
+                      <Input
+                        id="superficieHa"
+                        type="number"
+                        step="0.01"
+                        placeholder="Ej. 12.5"
+                        value={form.superficieHa}
+                        onChange={(e) => setForm({ ...form, superficieHa: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="condicion">Condición de Pasto (%)</Label>
+                      <Input
+                        id="condicion"
+                        type="number"
+                        min="0"
+                        max="100"
+                        placeholder="Ej. 85"
+                        value={form.condicion}
+                        onChange={(e) => setForm({ ...form, condicion: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="estado">Estado Inicial</Label>
+                    <Select value={form.estado} onValueChange={(val) => setForm({ ...form, estado: val || "libre" })}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecciona un estado..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="libre">Disponible (Libre)</SelectItem>
+                        <SelectItem value="descanso">En Descanso</SelectItem>
+                        <SelectItem value="ocupado">Ocupado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <DialogFooter className="pt-2">
+                  <Button type="submit" disabled={isSubmitting} className="w-full">
+                    {isSubmitting ? "Creando..." : "Crear Potrero"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">

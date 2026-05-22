@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,10 +15,47 @@ import { toast } from "sonner"
 
 export default function SettingsPage() {
   const { fincaId } = useGlobalStore()
+  const supabase = createClient()
   const [notifications, setNotifications] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [role, setRole] = useState("Usuario")
+  const [saving, setSaving] = useState(false)
 
-  const handleSave = () => {
-    toast.success("Configuración guardada correctamente")
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error) throw error
+        if (user) {
+          setFullName(user.user_metadata?.full_name || "")
+          setEmail(user.email || "")
+          setRole(user.user_metadata?.role || "Administrador")
+        }
+      } catch (error) {
+        console.error("Error loading user:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadUser()
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { full_name: fullName }
+      })
+      if (error) throw error
+      toast.success("Perfil actualizado correctamente")
+    } catch (error: any) {
+      console.error("Error updating user:", error)
+      toast.error(error.message || "Error al actualizar el perfil")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -44,23 +82,47 @@ export default function SettingsPage() {
               <CardDescription>Actualiza tus datos de contacto y perfil.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre Completo</Label>
-                  <Input id="name" defaultValue="Administrador" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Correo Electrónico</Label>
-                  <Input id="email" defaultValue="admin@siempremio.com" type="email" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="role">Rol en el Sistema</Label>
-                <Input id="role" defaultValue="Super Administrador" disabled />
-              </div>
+              {loading ? (
+                <div className="text-center py-6 text-muted-foreground">Cargando datos de perfil...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Nombre Completo</Label>
+                      <Input
+                        id="name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Ej. Lucas Parada"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Correo Electrónico</Label>
+                      <Input
+                        id="email"
+                        value={email}
+                        disabled
+                        type="email"
+                        className="bg-muted/50 cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Rol en el Sistema</Label>
+                    <Input
+                      id="role"
+                      value={role}
+                      disabled
+                      className="bg-muted/50 cursor-not-allowed"
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
             <CardFooter>
-              <Button onClick={handleSave}><Save className="w-4 h-4 mr-2"/> Guardar Cambios</Button>
+              <Button onClick={handleSave} disabled={loading || saving}>
+                <Save className="w-4 h-4 mr-2"/> {saving ? "Guardando..." : "Guardar Cambios"}
+              </Button>
             </CardFooter>
           </Card>
           
