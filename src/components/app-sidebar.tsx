@@ -1,11 +1,14 @@
 "use client"
 
-import { Home, Settings, Tractor, Milk, Activity, BarChart3, Database } from "lucide-react"
-import { usePathname } from "next/navigation"
+import { Home, Settings, Tractor, Milk, Activity, BarChart3, Database, LogOut } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -75,6 +78,21 @@ const items = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      toast.success("Sesión cerrada correctamente")
+      router.push("/login")
+      router.refresh()
+    } catch (err) {
+      console.error("Error logging out:", err)
+      toast.error("Error al cerrar sesión")
+    }
+  }
 
   return (
     <Sidebar className="border-r-0 !bg-transparent">
@@ -110,6 +128,19 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="bg-sidebar/60 backdrop-blur-2xl border-r border-border/50 border-t border-border/50 p-4">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={handleLogout}
+              className="w-full justify-start gap-3 text-destructive hover:bg-destructive/10 hover:text-destructive transition-all duration-300 rounded-lg h-10 px-3"
+            >
+              <LogOut className="w-5 h-5 opacity-70" />
+              <span className="font-medium">Cerrar Sesión</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }
