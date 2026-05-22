@@ -129,74 +129,76 @@ export default function SaludPage() {
           <CardDescription>Registro de todas las intervenciones médicas en el hato.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Animal</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Medicamento / Dosis</TableHead>
-                <TableHead>Próx. Aplicación</TableHead>
-                <TableHead className="text-right">Costo (Bs)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
+          <div className="overflow-x-auto w-full">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">Cargando datos...</TableCell>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Animal</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Medicamento / Dosis</TableHead>
+                  <TableHead>Próx. Aplicación</TableHead>
+                  <TableHead className="text-right">Costo (Bs)</TableHead>
                 </TableRow>
-              ) : eventos.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
-                    No hay eventos de salud registrados.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                eventos.map((evento) => {
-                  const animalInfo = (evento as any).animales;
-                  const isVacuna = evento.tipoEvento?.toLowerCase().includes('vacun') || evento.tipoEvento?.toLowerCase().includes('inyecc');
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center h-24">Cargando datos...</TableCell>
+                  </TableRow>
+                ) : eventos.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                      No hay eventos de salud registrados.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  eventos.map((evento) => {
+                    const animalInfo = (evento as any).animales;
+                    const isVacuna = evento.tipoEvento?.toLowerCase().includes('vacun') || evento.tipoEvento?.toLowerCase().includes('inyecc');
 
-                  return (
-                    <TableRow key={evento.uuid}>
-                      <TableCell className="font-medium whitespace-nowrap">
-                        {format(new Date(evento.fecha), "dd MMM, yyyy", { locale: es })}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-semibold">{animalInfo?.codigo || 'Desconocido'}</span>
-                          <span className="text-xs text-muted-foreground">{animalInfo?.nombre || ''}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="flex w-fit items-center gap-1.5 bg-background">
-                          {isVacuna ? <Syringe className="w-3 h-3 text-blue-500" /> : <Stethoscope className="w-3 h-3 text-primary" />}
-                          {evento.tipoEvento || 'Tratamiento'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span>{evento.medicamento || '-'}</span>
-                          <span className="text-xs text-muted-foreground">{evento.dosis ? `Dosis: ${evento.dosis}` : ''}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {evento.fechaProximaAplicacion ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
-                            {format(new Date(evento.fechaProximaAplicacion), "dd/MM/yyyy")}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {evento.costoBob ? evento.costoBob.toLocaleString('es-BO') : '-'}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
+                    return (
+                      <TableRow key={evento.uuid}>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          {format(new Date(evento.fecha), "dd MMM, yyyy", { locale: es })}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-semibold">{animalInfo?.codigo || 'Desconocido'}</span>
+                            <span className="text-xs text-muted-foreground">{animalInfo?.nombre || ''}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex w-fit items-center gap-1.5 bg-background">
+                            {isVacuna ? <Syringe className="w-3 h-3 text-blue-500" /> : <Stethoscope className="w-3 h-3 text-primary" />}
+                            {evento.tipoEvento || 'Tratamiento'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span>{evento.medicamento || '-'}</span>
+                            <span className="text-xs text-muted-foreground">{evento.dosis ? `Dosis: ${evento.dosis}` : ''}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {evento.fechaProximaAplicacion ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
+                              {format(new Date(evento.fechaProximaAplicacion), "dd/MM/yyyy")}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {evento.costoBob ? evento.costoBob.toLocaleString('es-BO') : '-'}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

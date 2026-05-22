@@ -129,32 +129,34 @@ export default function FinanzasPage() {
               <CardDescription>Registro histórico de movimientos financieros en la base de datos.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transacciones.map((tx) => (
-                    <TableRow key={tx.id}>
-                      <TableCell className="font-medium">
-                        {format(new Date(tx.fecha), "dd MMM, yyyy", { locale: es })}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{tx.categoria}</Badge>
-                      </TableCell>
-                      <TableCell>{tx.descripcion}</TableCell>
-                      <TableCell className={`text-right font-bold ${tx.tipo === 'ingreso' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {tx.tipo === 'ingreso' ? '+' : '-'}{tx.montoBs.toLocaleString('es-BO')} Bs
-                      </TableCell>
+              <div className="overflow-x-auto w-full">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {transacciones.map((tx) => (
+                      <TableRow key={tx.id}>
+                        <TableCell className="font-medium">
+                          {format(new Date(tx.fecha), "dd MMM, yyyy", { locale: es })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{tx.categoria}</Badge>
+                        </TableCell>
+                        <TableCell>{tx.descripcion}</TableCell>
+                        <TableCell className={`text-right font-bold ${tx.tipo === 'ingreso' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {tx.tipo === 'ingreso' ? '+' : '-'}{tx.montoBs.toLocaleString('es-BO')} Bs
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -186,44 +188,46 @@ export default function FinanzasPage() {
               <CardDescription>Monitoreo de stock de alimentos, medicinas y genética.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Producto</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead className="w-[300px]">Nivel de Stock</TableHead>
-                    <TableHead className="text-right">Cantidad</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {insumos.map((insumo) => {
-                    const porcentaje = (insumo.stockActual / insumo.stockMaximo) * 100
-                    const isCritical = insumo.stockActual <= insumo.stockMinimo
-                    
-                    return (
-                      <TableRow key={insumo.id}>
-                        <TableCell className="font-medium">{insumo.nombre}</TableCell>
-                        <TableCell><Badge variant="secondary">{insumo.categoria}</Badge></TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Progress 
-                              value={porcentaje} 
-                              className={`h-2 ${isCritical ? '[&>div]:bg-red-500' : (porcentaje < 40 ? '[&>div]:bg-yellow-500' : '[&>div]:bg-green-500')}`} 
-                            />
-                            <span className="text-xs text-muted-foreground w-12 text-right">{porcentaje.toFixed(0)}%</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          <span className={isCritical ? "text-red-600 dark:text-red-400 font-bold" : ""}>
-                            {insumo.stockActual}
-                          </span>
-                          <span className="text-muted-foreground ml-1">/ {insumo.stockMaximo}</span>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto w-full">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead className="w-[300px]">Nivel de Stock</TableHead>
+                      <TableHead className="text-right">Cantidad</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {insumos.map((insumo) => {
+                      const porcentaje = (insumo.stockActual / insumo.stockMaximo) * 100
+                      const isCritical = insumo.stockActual <= insumo.stockMinimo
+                      
+                      return (
+                        <TableRow key={insumo.id}>
+                          <TableCell className="font-medium">{insumo.nombre}</TableCell>
+                          <TableCell><Badge variant="secondary">{insumo.categoria}</Badge></TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Progress 
+                                value={porcentaje} 
+                                className={`h-2 ${isCritical ? '[&>div]:bg-red-500' : (porcentaje < 40 ? '[&>div]:bg-yellow-500' : '[&>div]:bg-green-500')}`} 
+                              />
+                              <span className="text-xs text-muted-foreground w-12 text-right">{porcentaje.toFixed(0)}%</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            <span className={isCritical ? "text-red-600 dark:text-red-400 font-bold" : ""}>
+                              {insumo.stockActual}
+                            </span>
+                            <span className="text-muted-foreground ml-1">/ {insumo.stockMaximo}</span>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

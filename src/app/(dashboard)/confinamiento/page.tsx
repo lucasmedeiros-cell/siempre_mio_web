@@ -116,44 +116,46 @@ export default function ConfinamientoPage() {
             <UtensilsCrossed className="w-5 h-5 text-muted-foreground/50" />
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Prot. %</TableHead>
-                  <TableHead>Costo/kg</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
+            <div className="overflow-x-auto w-full">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8">Cargando recetas...</TableCell>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Prot. %</TableHead>
+                    <TableHead>Costo/kg</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ) : recetas.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                      No hay recetas registradas.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  recetas.map((receta) => (
-                    <TableRow key={receta.uuid}>
-                      <TableCell className="font-medium">{receta.nombre}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="font-mono">
-                          {receta.proteinaTotal.toFixed(1)}%
-                        </Badge>
-                      </TableCell>
-                      <TableCell>Bs. {receta.costoTotal.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">Ver</Button>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8">Cargando recetas...</TableCell>
+                    </TableRow>
+                  ) : recetas.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                        No hay recetas registradas.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    recetas.map((receta) => (
+                      <TableRow key={receta.uuid}>
+                        <TableCell className="font-medium">{receta.nombre}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="font-mono">
+                            {receta.proteinaTotal.toFixed(1)}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell>Bs. {receta.costoTotal.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm">Ver</Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 

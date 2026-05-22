@@ -20,7 +20,7 @@ export function FincaSelector() {
         value={fincaId || "all"}
         onValueChange={(val) => setFincaId(val === "all" ? null : val)}
       >
-        <SelectTrigger className="w-[180px] h-8 text-xs">
+        <SelectTrigger className="w-[130px] sm:w-[180px] h-8 text-[11px] sm:text-xs">
           <SelectValue placeholder="Todas las fincas" />
         </SelectTrigger>
         <SelectContent>
