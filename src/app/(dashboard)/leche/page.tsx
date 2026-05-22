@@ -37,7 +37,7 @@ export default function LecheriaPage() {
         .eq('deleted', false)
         .gte('fecha', hace30dias)
         
-      const regs = registros || []
+      const regs = (registros || []) as any[]
       
       // KPIs Día Actual
       const regsHoy = regs.filter(r => r.fecha.startsWith(hoy))
@@ -92,7 +92,7 @@ export default function LecheriaPage() {
     mutationFn: async (payload: any) => {
       const supabase = createClient()
       // Buscamos vaca por RP
-      const { data: vaca } = await supabase.from('animales').select('uuid').eq('codigo', payload.rp).single()
+      const { data: vaca } = await (supabase.from('animales') as any).select('uuid').eq('codigo', payload.rp).single()
       
       const p = {
         uuid: payload.uuid,
@@ -105,7 +105,7 @@ export default function LecheriaPage() {
         updatedAt: payload.updatedAt
       }
       
-      const { error } = await supabase.from('registros_leche').insert([p])
+      const { error } = await (supabase.from('registros_leche') as any).insert([p])
       if (error) throw error
       return p
     },

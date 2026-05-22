@@ -51,7 +51,7 @@ export default function FinanzasPage() {
       
       if (error) throw error
       
-      return (data || []).map(i => ({
+      return (data || []).map((i: any) => ({
         id: i.uuid,
         nombre: i.nombre,
         categoria: i.categoria || 'Insumo',

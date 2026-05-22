@@ -51,9 +51,9 @@ export default function LotesPage() {
 
       // Fetch animal counts for each lote
       const lotesWithCounts = await Promise.all(
-        lotesData.map(async (lote) => {
-          const { count, error: countError } = await supabase
-            .from('animales')
+        (lotesData || []).map(async (lote: any) => {
+          const { count, error: countError } = await (supabase
+            .from('animales') as any)
             .select('*', { count: 'exact', head: true })
             .eq('loteId', lote.uuid)
             .eq('deleted', false)

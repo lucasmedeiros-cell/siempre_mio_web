@@ -64,13 +64,13 @@ export default function ReportesPage() {
 
       // Data Fetching and Table Rendering
       if (reportType === 'inventario_general') {
-        let query = supabase.from('animales').select('codigo, nombre, categoria, raza, estado').eq('deleted', false)
+        let query = (supabase.from('animales') as any).select('codigo, nombre, categoria, raza, estado').eq('deleted', false)
         if (fincaId) query = query.eq('propietarioId', fincaId)
         
         const { data, error } = await query
         if (error) throw error
 
-        const rows = (data || []).map(a => [a.codigo || '', a.nombre || '', a.categoria || '', a.raza || '', a.estado || ''])
+        const rows = (data || []).map((a: any) => [a.codigo || '', a.nombre || '', a.categoria || '', a.raza || '', a.estado || ''])
 
         autoTable(doc, {
           startY: 65,

@@ -50,7 +50,7 @@ export default function PotrerosPage() {
       const { data, error } = await supabase.from('potreros').select('*').eq('deleted', false).order('nombre')
       if (error) throw error
       
-      return (data || []).map(p => ({
+      return (data || []).map((p: any) => ({
         ...p,
         // Adaptamos el estado real al formato que espera la UI (libre, en_uso, descanso)
         estado: p.estado.toLowerCase() === 'ocupado' || p.estado === 'En Uso' ? 'en_uso' 
@@ -213,7 +213,7 @@ export default function PotrerosPage() {
                 
                 <div className="space-y-3">
                   <label className="text-sm font-medium">Potrero Destino</label>
-                  <Select value={destinoId} onValueChange={setDestinoId}>
+                  <Select value={destinoId} onValueChange={(val) => setDestinoId(val || "")}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Selecciona un potrero libre..." />
                     </SelectTrigger>

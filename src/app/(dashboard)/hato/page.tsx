@@ -49,7 +49,7 @@ export default function HatoPage() {
         updatedAt: new Date().toISOString()
       }
 
-      const { error } = await supabase.from('animales').insert([payload])
+      const { error } = await (supabase.from('animales') as any).insert([payload])
       if (error) throw error
       return payload as Animal
     },

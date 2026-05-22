@@ -36,12 +36,12 @@ export default function DashboardPage() {
       const supabase = createClient()
 
       // Fetch de las principales tablas
-      const { data: animales } = await supabase.from('animales').select('sexo, categoria, estado').eq('deleted', false)
-      const { data: potreros } = await supabase.from('potreros').select('estado').eq('deleted', false)
-      const { data: leche } = await supabase.from('registros_leche').select('litros, fecha').eq('deleted', false)
-      const { data: transacciones } = await supabase.from('transacciones').select('tipo, monto, fecha').eq('deleted', false)
-      const { data: actividades } = await supabase.from('actividades_log').select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5)
-      const { data: alertas } = await supabase.from('alertas').select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3)
+      const { data: animales } = await (supabase.from('animales') as any).select('sexo, categoria, estado').eq('deleted', false) as { data: any[] | null }
+      const { data: potreros } = await (supabase.from('potreros') as any).select('estado').eq('deleted', false) as { data: any[] | null }
+      const { data: leche } = await (supabase.from('registros_leche') as any).select('litros, fecha').eq('deleted', false) as { data: any[] | null }
+      const { data: transacciones } = await (supabase.from('transacciones') as any).select('tipo, monto, fecha').eq('deleted', false) as { data: any[] | null }
+      const { data: actividades } = await (supabase.from('actividades_log') as any).select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5) as { data: any[] | null }
+      const { data: alertas } = await (supabase.from('alertas') as any).select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3) as { data: any[] | null }
 
       // KPI: Total Hato
       const totalAnimales = animales?.length || 0

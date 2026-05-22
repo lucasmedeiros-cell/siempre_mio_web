@@ -23,8 +23,8 @@ export default function SaludPage() {
     queryKey: ['eventos_salud', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('eventos_salud')
+      const { data, error } = await (supabase
+        .from('eventos_salud') as any)
         .select(`
           *,
           animales (
@@ -36,7 +36,7 @@ export default function SaludPage() {
         .order('fecha', { ascending: false })
 
       if (error) throw error
-      return data || []
+      return (data || []) as any[]
     }
   })
 

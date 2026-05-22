@@ -40,8 +40,8 @@ export default function TareasPage() {
   async function fetchTareas() {
     setLoading(true)
     try {
-      let query = supabase
-        .from('tareas')
+      let query = (supabase
+        .from('tareas') as any)
         .select('*')
         .eq('deleted', false)
 
@@ -62,8 +62,8 @@ export default function TareasPage() {
 
   async function updateTareaEstado(uuid: string, nuevoEstado: string) {
     try {
-      const { error } = await supabase
-        .from('tareas')
+      const { error } = await (supabase
+        .from('tareas') as any)
         .update({ estado: nuevoEstado, updatedAt: new Date().toISOString() })
         .eq('uuid', uuid)
 
