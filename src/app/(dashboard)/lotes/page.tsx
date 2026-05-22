@@ -9,6 +9,27 @@ import { Users, Plus, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+const PALETTE_COLORS = [
+  { hex: "#2D6A2E", label: "Verde Oscuro" },
+  { hex: "#155E75", label: "Azul Petróleo" },
+  { hex: "#9A3412", label: "Óxido" },
+  { hex: "#581C87", label: "Púrpura" },
+  { hex: "#854D0E", label: "Mostaza" },
+  { hex: "#166534", label: "Verde Hoja" },
+]
 
 interface LoteWithCount {
   uuid: string
@@ -25,6 +46,15 @@ export default function LotesPage() {
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
+  const [openRegister, setOpenRegister] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    nombre: "",
+    categoriaLote: "Engorde",
+    descripcion: "",
+    color: "#2D6A2E",
+  })
+
   useEffect(() => {
     fetchLotes()
   }, [fincaId])
@@ -32,8 +62,7 @@ export default function LotesPage() {
   async function fetchLotes() {
     setLoading(true)
     try {
-      let query = supabase
-        .from('lotes')
+      let query = (supabase.from('lotes') as any)
         .select('*')
         .eq('deleted', false)
 
@@ -76,6 +105,44 @@ export default function LotesPage() {
     }
   }
 
+  async function handleCreateLote(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.nombre) return
+
+    setIsSubmitting(true)
+    try {
+      const payload = {
+        uuid: crypto.randomUUID(),
+        nombre: form.nombre,
+        categoriaLote: form.categoriaLote,
+        descripcion: form.descripcion || null,
+        color: form.color,
+        fincaId: fincaId || null,
+        deleted: false,
+        synced: true,
+        updatedAt: new Date().toISOString()
+      }
+
+      const { error } = await (supabase.from('lotes') as any).insert([payload])
+      if (error) throw error
+
+      toast.success("Lote creado correctamente")
+      setOpenRegister(false)
+      setForm({
+        nombre: "",
+        categoriaLote: "Engorde",
+        descripcion: "",
+        color: "#2D6A2E",
+      })
+      fetchLotes()
+    } catch (error) {
+      console.error("Error creating lote:", error)
+      toast.error("Error al crear el lote")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -85,9 +152,88 @@ export default function LotesPage() {
             Administra los grupos de animales y su distribución en la finca.
           </p>
         </div>
-        <Button className="gap-2">
-          <Plus className="w-4 h-4" /> Nuevo Lote
-        </Button>
+        <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+          <DialogTrigger
+            render={
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" /> Nuevo Lote
+              </Button>
+            }
+          />
+          <DialogContent className="sm:max-w-md">
+            <form onSubmit={handleCreateLote} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>Crear Nuevo Lote</DialogTitle>
+                <DialogDescription>
+                  Ingresa los detalles para registrar un nuevo lote en la finca.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nombre">Nombre del Lote (Requerido)</Label>
+                  <Input
+                    id="nombre"
+                    placeholder="Ej. Lote Engorde A"
+                    value={form.nombre}
+                    onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="categoriaLote">Categoría</Label>
+                  <Select value={form.categoriaLote} onValueChange={(val) => setForm({ ...form, categoriaLote: val || "" })}>
+                    <SelectTrigger id="categoriaLote">
+                      <SelectValue placeholder="Selecciona categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Engorde">Engorde</SelectItem>
+                      <SelectItem value="Lechero">Lechero</SelectItem>
+                      <SelectItem value="Cría">Cría</SelectItem>
+                      <SelectItem value="Recría">Recría</SelectItem>
+                      <SelectItem value="Secado">Secado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="descripcion">Descripción</Label>
+                  <Input
+                    id="descripcion"
+                    placeholder="Ej. Animales de 2 años en fase final"
+                    value={form.descripcion}
+                    onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Color Representativo</Label>
+                  <div className="flex gap-2 flex-wrap">
+                    {PALETTE_COLORS.map((col) => (
+                      <button
+                        key={col.hex}
+                        type="button"
+                        onClick={() => setForm({ ...form, color: col.hex })}
+                        className={`h-8 w-8 rounded-full border-2 transition-all ${
+                          form.color === col.hex ? "border-primary scale-110 shadow" : "border-transparent"
+                        }`}
+                        style={{ backgroundColor: col.hex }}
+                        title={col.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-4">
+                <Button type="submit" disabled={isSubmitting} className="w-full">
+                  {isSubmitting ? "Creando..." : "Confirmar Lote"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {loading ? (

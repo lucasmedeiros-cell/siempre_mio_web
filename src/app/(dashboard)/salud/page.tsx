@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { format, isAfter, isThisMonth } from "date-fns"
@@ -11,12 +11,98 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Activity, Plus, Syringe, Stethoscope, AlertCircle } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { toast } from "sonner"
 
 export default function SaludPage() {
   const { fincaId } = useGlobalStore()
   const [openForm, setOpenForm] = useState(false)
+  const queryClient = useQueryClient()
+
+  const [form, setForm] = useState({
+    animalId: "",
+    tipoEvento: "Vacunación",
+    medicamento: "",
+    dosis: "",
+    fecha: new Date().toISOString().split('T')[0],
+    fechaProximaAplicacion: "",
+    costoBob: "",
+    observacion: "",
+  })
+
+  // Consultar lista de animales para el selector
+  const { data: animales = [] } = useQuery({
+    queryKey: ['animales_select', fincaId],
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase.from('animales')
+        .select('uuid, codigo, nombre')
+        .eq('deleted', false)
+        .order('codigo', { ascending: true })
+      if (error) throw error
+      return data || []
+    }
+  })
+
+  // Mutación para agregar un evento de salud
+  const addEventoMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const supabase = createClient()
+      const dataPayload = {
+        ...payload,
+        uuid: crypto.randomUUID(),
+        deleted: false,
+        synced: true,
+        updatedAt: new Date().toISOString()
+      }
+      const { error } = await (supabase.from('eventos_salud') as any).insert([dataPayload])
+      if (error) throw error
+      return dataPayload
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['eventos_salud'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard_overview'] })
+      toast.success("Evento de salud registrado")
+      setOpenForm(false)
+      setForm({
+        animalId: "",
+        tipoEvento: "Vacunación",
+        medicamento: "",
+        dosis: "",
+        fecha: new Date().toISOString().split('T')[0],
+        fechaProximaAplicacion: "",
+        costoBob: "",
+        observacion: "",
+      })
+    },
+    onError: (error) => {
+      console.error(error)
+      toast.error("Error al registrar el evento de salud")
+    }
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.animalId || !form.fecha) {
+      toast.error("Por favor selecciona un animal y una fecha")
+      return
+    }
+
+    addEventoMutation.mutate({
+      animalId: form.animalId,
+      tipoEvento: form.tipoEvento,
+      medicamento: form.medicamento || null,
+      dosis: form.dosis || null,
+      fecha: new Date(form.fecha).toISOString(),
+      fechaProximaAplicacion: form.fechaProximaAplicacion ? new Date(form.fechaProximaAplicacion).toISOString() : null,
+      costoBob: form.costoBob ? parseFloat(form.costoBob) : null,
+      observacion: form.observacion || null,
+    })
+  }
 
   // Consultar eventos de salud y unirlos con información de animales
   const { data: eventos = [], isLoading } = useQuery({
@@ -65,16 +151,118 @@ export default function SaludPage() {
               </Button>
             }
           />
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Registrar Evento de Salud</DialogTitle>
-              <DialogDescription>
-                Ingresa los detalles del tratamiento, vacuna o diagnóstico.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-6 text-center text-muted-foreground">
-              Formulario en construcción...
-            </div>
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>Registrar Evento de Salud</DialogTitle>
+                <DialogDescription>
+                  Ingresa los detalles del tratamiento, vacuna o diagnóstico.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="animalId">Animal (Requerido)</Label>
+                  <Select value={form.animalId} onValueChange={(val) => setForm({ ...form, animalId: val || "" })}>
+                    <SelectTrigger id="animalId">
+                      <SelectValue placeholder="Selecciona un animal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {animales.map((a: any) => (
+                        <SelectItem key={a.uuid} value={a.uuid}>
+                          {a.codigo} - {a.nombre || "Sin Nombre"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tipoEvento">Tipo de Evento</Label>
+                  <Select value={form.tipoEvento} onValueChange={(val) => setForm({ ...form, tipoEvento: val || "Vacunación" })}>
+                    <SelectTrigger id="tipoEvento">
+                      <SelectValue placeholder="Selecciona tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Vacunación">Vacunación</SelectItem>
+                      <SelectItem value="Tratamiento">Tratamiento</SelectItem>
+                      <SelectItem value="Control Clínico">Control Clínico</SelectItem>
+                      <SelectItem value="Desparasitación">Desparasitación</SelectItem>
+                      <SelectItem value="Cirugía">Cirugía</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fecha">Fecha (Requerido)</Label>
+                  <Input
+                    id="fecha"
+                    type="date"
+                    value={form.fecha}
+                    onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="medicamento">Medicamento / Producto</Label>
+                  <Input
+                    id="medicamento"
+                    placeholder="Ej. Ivermectina 1%"
+                    value={form.medicamento}
+                    onChange={(e) => setForm({ ...form, medicamento: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="dosis">Dosis aplicada</Label>
+                  <Input
+                    id="dosis"
+                    placeholder="Ej. 10 ml"
+                    value={form.dosis}
+                    onChange={(e) => setForm({ ...form, dosis: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fechaProximaAplicacion">Próxima Aplicación</Label>
+                  <Input
+                    id="fechaProximaAplicacion"
+                    type="date"
+                    value={form.fechaProximaAplicacion}
+                    onChange={(e) => setForm({ ...form, fechaProximaAplicacion: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="costoBob">Costo (Bs)</Label>
+                  <Input
+                    id="costoBob"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.costoBob}
+                    onChange={(e) => setForm({ ...form, costoBob: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="observacion">Observaciones / Síntomas</Label>
+                  <Input
+                    id="observacion"
+                    placeholder="Detalles sobre el estado del animal o diagnóstico"
+                    value={form.observacion}
+                    onChange={(e) => setForm({ ...form, observacion: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button type="submit" disabled={addEventoMutation.isPending} className="w-full">
+                  {addEventoMutation.isPending ? "Guardando..." : "Guardar Evento"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>

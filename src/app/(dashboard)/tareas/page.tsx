@@ -11,6 +11,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Tarea {
   uuid: string
@@ -32,6 +44,15 @@ export default function TareasPage() {
   const [loading, setLoading] = useState(true)
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
+
+  const [openRegister, setOpenRegister] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    titulo: "",
+    prioridad: "Media" as 'Baja' | 'Media' | 'Alta',
+    fechaLimite: new Date().toISOString().split('T')[0],
+    asignadoA: "",
+  })
 
   useEffect(() => {
     fetchTareas()
@@ -57,6 +78,45 @@ export default function TareasPage() {
       toast.error("Error al cargar las tareas")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleCreateTarea(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.titulo) return
+
+    setIsSubmitting(true)
+    try {
+      const payload = {
+        uuid: crypto.randomUUID(),
+        titulo: form.titulo,
+        estado: "Pendiente",
+        prioridad: form.prioridad,
+        fechaLimite: form.fechaLimite ? new Date(form.fechaLimite).toISOString() : null,
+        asignadoA: form.asignadoA || null,
+        propietarioId: fincaId || null,
+        deleted: false,
+        synced: true,
+        updatedAt: new Date().toISOString()
+      }
+
+      const { error } = await (supabase.from('tareas') as any).insert([payload])
+      if (error) throw error
+
+      toast.success("Tarea creada correctamente")
+      setOpenRegister(false)
+      setForm({
+        titulo: "",
+        prioridad: "Media",
+        fechaLimite: new Date().toISOString().split('T')[0],
+        asignadoA: "",
+      })
+      fetchTareas()
+    } catch (error) {
+      console.error("Error creating tarea:", error)
+      toast.error("Error al crear la tarea")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -105,9 +165,83 @@ export default function TareasPage() {
           <Button variant="outline" size="sm" className="gap-2">
             <Filter className="w-4 h-4" /> Filtros
           </Button>
-          <Button className="gap-2">
-            <Plus className="w-4 h-4" /> Nueva Tarea
-          </Button>
+          <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+            <DialogTrigger
+              render={
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" /> Nueva Tarea
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-md">
+              <form onSubmit={handleCreateTarea} className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Nueva Tarea</DialogTitle>
+                  <DialogDescription>
+                    Registra una actividad para el equipo de trabajo de la finca.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="titulo">Título de la Tarea (Requerido)</Label>
+                    <Input
+                      id="titulo"
+                      placeholder="Ej. Vacunación contra Fiebre Aftosa"
+                      value={form.titulo}
+                      onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="prioridad">Prioridad</Label>
+                      <Select 
+                        value={form.prioridad} 
+                        onValueChange={(val) => setForm({ ...form, prioridad: (val || "Media") as 'Baja' | 'Media' | 'Alta' })}
+                      >
+                        <SelectTrigger id="prioridad">
+                          <SelectValue placeholder="Selecciona prioridad" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Baja">Baja</SelectItem>
+                          <SelectItem value="Media">Media</SelectItem>
+                          <SelectItem value="Alta">Alta</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="fechaLimite">Fecha Límite</Label>
+                      <Input
+                        id="fechaLimite"
+                        type="date"
+                        value={form.fechaLimite}
+                        onChange={(e) => setForm({ ...form, fechaLimite: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="asignadoA">Asignado a (Responsable)</Label>
+                    <Input
+                      id="asignadoA"
+                      placeholder="Ej. Juan Pérez"
+                      value={form.asignadoA}
+                      onChange={(e) => setForm({ ...form, asignadoA: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter className="pt-2">
+                  <Button type="submit" disabled={isSubmitting} className="w-full">
+                    {isSubmitting ? "Creando..." : "Crear Tarea"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -140,7 +274,7 @@ export default function TareasPage() {
                       {tareas.filter(t => t.estado === column.id).length}
                     </Badge>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpenRegister(true)}>
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>

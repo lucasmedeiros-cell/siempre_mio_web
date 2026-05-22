@@ -21,7 +21,23 @@ export default function LecheriaPage() {
   const { fincaId } = useGlobalStore()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ rp: "", turno: "Manana", litros: "" })
+  const [form, setForm] = useState({ vacaId: "", turno: "Manana", litros: "" })
+
+  // Fetch de vacas (hembras) para el selector
+  const { data: vacasHembra = [] } = useQuery({
+    queryKey: ['vacas_hembra_select', fincaId],
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase.from('animales')
+        .select('uuid, codigo, nombre')
+        .eq('deleted', false)
+        .eq('sexo', 'Hembra')
+        .order('codigo', { ascending: true })
+      
+      if (error) throw error
+      return data || []
+    }
+  })
 
   // Fetch de datos reales
   const { data: lecheData, isLoading } = useQuery({
@@ -91,12 +107,9 @@ export default function LecheriaPage() {
   const addProduccionMutation = useMutation({
     mutationFn: async (payload: any) => {
       const supabase = createClient()
-      // Buscamos vaca por RP
-      const { data: vaca } = await (supabase.from('animales') as any).select('uuid').eq('codigo', payload.rp).single()
-      
       const p = {
         uuid: payload.uuid,
-        vacaId: vaca?.uuid || null,
+        vacaId: payload.vacaId || null,
         fecha: new Date().toISOString(),
         turno: payload.turno,
         litros: payload.litros,
@@ -113,13 +126,13 @@ export default function LecheriaPage() {
       queryClient.invalidateQueries({ queryKey: ['produccion_leche_full'] })
       toast.success("Ordeño registrado correctamente")
       setOpen(false)
-      setForm({ rp: "", turno: "Manana", litros: "" })
+      setForm({ vacaId: "", turno: "Manana", litros: "" })
     }
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.rp || !form.litros) return
+    if (!form.vacaId || !form.litros) return
     addProduccionMutation.mutate({
       ...form,
       litros: parseFloat(form.litros),
@@ -159,17 +172,23 @@ export default function LecheriaPage() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label>Vaca (Código RP)</Label>
-                  <Input 
-                    placeholder="Ej. RP-425" 
-                    value={form.rp}
-                    onChange={(e) => setForm({...form, rp: e.target.value})}
-                    required
-                  />
+                  <Label htmlFor="vacaId">Vaca (Código RP - Requerido)</Label>
+                  <Select value={form.vacaId} onValueChange={(val) => setForm({ ...form, vacaId: val || "" })}>
+                    <SelectTrigger id="vacaId">
+                      <SelectValue placeholder="Selecciona una vaca" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vacasHembra.map((v: any) => (
+                        <SelectItem key={v.uuid} value={v.uuid}>
+                          {v.codigo} - {v.nombre || "Sin Nombre"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Turno</Label>
-                  <Select value={form.turno} onValueChange={(val) => setForm({...form, turno: val as string})}>
+                  <Select value={form.turno} onValueChange={(val) => setForm({...form, turno: (val || "Manana") as string})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona el turno" />
                     </SelectTrigger>
