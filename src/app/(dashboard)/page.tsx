@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,6 +12,15 @@ import {
 import { Beef, Milk, Tractor, Wallet, Activity, Syringe, Clock } from "lucide-react"
 import { useGlobalStore } from "@/store/global-store"
 import { createClient } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 // Animación simple para los números
 const AnimatedNumber = ({ value, prefix = "", suffix = "" }: { value: number, prefix?: string, suffix?: string }) => {
@@ -28,6 +38,8 @@ const AnimatedNumber = ({ value, prefix = "", suffix = "" }: { value: number, pr
 
 export default function DashboardPage() {
   const { fincaId } = useGlobalStore()
+  const [openAllActivities, setOpenAllActivities] = useState(false)
+  const [filterType, setFilterType] = useState("todos")
 
   // 1. DATOS REALES DESDE SUPABASE
   const { data: dashboardData } = useQuery({
@@ -43,30 +55,30 @@ export default function DashboardPage() {
       const { data: actividades } = await (supabase.from('actividades_log') as any).select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5) as { data: any[] | null }
       const { data: alertas } = await (supabase.from('alertas') as any).select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3) as { data: any[] | null }
 
-      // Carga adicional de actualizaciones en tiempo real para el agregador de actividad reciente
+      // Carga adicional de actualizaciones en tiempo real para el agregador de actividad reciente (límites aumentados a 20 para el Ver Todo)
       const { data: recentAnimals } = await (supabase.from('animales') as any)
         .select('uuid, codigo, nombre, updated_at')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
-        .limit(3) as { data: any[] | null }
+        .limit(20) as { data: any[] | null }
 
       const { data: recentHealth } = await (supabase.from('eventos_salud') as any)
         .select('uuid, tipo_evento, medicamento, updated_at, animales(codigo)')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
-        .limit(3) as { data: any[] | null }
+        .limit(20) as { data: any[] | null }
 
       const { data: recentLeche } = await (supabase.from('registros_leche') as any)
         .select('uuid, litros, fecha, updated_at, animales(codigo)')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
-        .limit(3) as { data: any[] | null }
+        .limit(20) as { data: any[] | null }
 
       const { data: recentTrans } = await (supabase.from('transacciones') as any)
         .select('uuid, tipo, categoria, monto, updated_at')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
-        .limit(3) as { data: any[] | null }
+        .limit(20) as { data: any[] | null }
 
       // KPI: Total Hato
       const totalAnimales = animales?.length || 0
@@ -109,7 +121,8 @@ export default function DashboardPage() {
             id: act.uuid,
             texto: act.descripcion || "Actividad registrada",
             timestamp,
-            hora: new Date(act.fecha).toLocaleDateString()
+            hora: new Date(act.fecha).toLocaleDateString(),
+            tipo: "log"
           });
         }
       });
@@ -122,7 +135,8 @@ export default function DashboardPage() {
           id: `animal-${a.uuid}`,
           texto: `Animal registrado: RP ${a.codigo}${a.nombre ? ` (${a.nombre})` : ''}`,
           timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
+          tipo: "animal"
         });
       });
 
@@ -135,7 +149,8 @@ export default function DashboardPage() {
           id: `health-${h.uuid}`,
           texto: `${h.tipo_evento || h.tipoEvento || 'Tratamiento'}${animCode ? ` a RP ${animCode}` : ''}${h.medicamento ? ` con ${h.medicamento}` : ''}`,
           timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
+          tipo: "salud"
         });
       });
 
@@ -148,7 +163,8 @@ export default function DashboardPage() {
           id: `leche-${l.uuid}`,
           texto: `Ordeño de ${l.litros} L${animCode ? ` (Vaca RP ${animCode})` : ''}`,
           timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
+          tipo: "leche"
         });
       });
 
@@ -160,14 +176,14 @@ export default function DashboardPage() {
           id: `trans-${t.uuid}`,
           texto: `${t.tipo === 'Ingreso' ? 'Ingreso' : 'Egreso'} de Bs. ${t.monto} (${t.categoria})`,
           timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
+          tipo: "transaccion"
         });
       });
 
-      // Ordenar actividades de forma cronológica descendente y tomar las 5 más recientes
-      const sortedActivities = aggregatedActivities
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 5);
+      // Ordenar actividades de forma cronológica descendente
+      const allSortedActivities = [...aggregatedActivities].sort((a, b) => b.timestamp - a.timestamp);
+      const sortedActivities = allSortedActivities.slice(0, 5);
 
       return {
         kpis: {
@@ -195,7 +211,13 @@ export default function DashboardPage() {
           id: act.id,
           texto: act.texto,
           hora: act.hora,
-          tipo: "general"
+          tipo: act.tipo
+        })),
+        todasLasActividades: allSortedActivities.map((act) => ({
+          id: act.id,
+          texto: act.texto,
+          hora: act.hora,
+          tipo: act.tipo
         })),
         alertasSalud: alertas?.map((alerta) => ({
           id: alerta.uuid,
@@ -357,11 +379,38 @@ export default function DashboardPage() {
 
         {/* Panel Lateral (Ocupa 1 columna) */}
         <div className="col-span-1 md:col-span-2 lg:col-span-1 space-y-6">
-          <Card className="h-[calc(50%-12px)]">
-            <CardHeader>
+          <Card 
+            className="h-[calc(50%-12px)] cursor-pointer hover:shadow-md transition-all hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary outline-none"
+            tabIndex={0}
+            onClick={() => {
+              setFilterType("todos");
+              setOpenAllActivities(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setFilterType("todos");
+                setOpenAllActivities(true);
+              }
+            }}
+            title="Presiona Enter o haz clic para ver todo el historial de actividades"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-primary" /> Actividad Reciente
               </CardTitle>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-[10px] text-primary hover:text-primary/80 h-7 px-2 font-bold select-none"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFilterType("todos");
+                  setOpenAllActivities(true);
+                }}
+              >
+                Ver Todo
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
@@ -410,6 +459,116 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      {/* Historial Completo Dialog Pop-up */}
+      <Dialog open={openAllActivities} onOpenChange={setOpenAllActivities}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-background">
+          <DialogHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Activity className="w-6 h-6 text-primary" />
+                <DialogTitle className="text-xl font-bold">Historial Completo de Actividades</DialogTitle>
+              </div>
+            </div>
+            <DialogDescription className="mt-1">
+              Registro agregado de todo lo subido y modificado en el hato en tiempo real.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Filtros de Tipo */}
+          <div className="flex gap-1.5 flex-wrap py-3 border-b">
+            {[
+              { id: "todos", label: "Todos" },
+              { id: "animal", label: "🐂 Animales" },
+              { id: "salud", label: "💉 Salud" },
+              { id: "leche", label: "🥛 Leche" },
+              { id: "transaccion", label: "💰 Finanzas" },
+              { id: "log", label: "📝 Logs" }
+            ].map(f => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilterType(f.id)}
+                className={`px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-all ${
+                  filterType === f.id
+                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Listado de Actividades del Historial */}
+          <div className="space-y-4 py-4">
+            {(() => {
+              const list = (dashboardData as any).todasLasActividades || [];
+              const filtered = list.filter((act: any) => filterType === "todos" || act.tipo === filterType);
+              
+              if (filtered.length === 0) {
+                return (
+                  <div className="py-12 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-muted/10">
+                    No se encontraron registros para esta categoría.
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  {filtered.map((act: any) => {
+                    let badgeColor = "";
+                    let badgeLabel = "";
+                    if (act.tipo === 'animal') {
+                      badgeColor = "bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/10";
+                      badgeLabel = "Animal";
+                    } else if (act.tipo === 'salud') {
+                      badgeColor = "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/10";
+                      badgeLabel = "Salud";
+                    } else if (act.tipo === 'leche') {
+                      badgeColor = "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/10";
+                      badgeLabel = "Leche";
+                    } else if (act.tipo === 'transaccion') {
+                      badgeColor = "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/10";
+                      badgeLabel = "Finanzas";
+                    } else {
+                      badgeColor = "bg-muted text-muted-foreground border-border";
+                      badgeLabel = "Log";
+                    }
+
+                    return (
+                      <div key={act.id} className="flex gap-4 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-all">
+                        <div className="relative mt-1 shrink-0">
+                          <div className="h-3 w-3 rounded-full bg-primary" />
+                        </div>
+                        <div className="flex-1 space-y-1.5 min-w-0">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <p className="text-sm font-semibold leading-tight text-foreground truncate break-words flex-1">
+                              {act.texto}
+                            </p>
+                            <Badge variant="outline" className={`text-[9px] font-bold px-1.5 py-0 shrink-0 ${badgeColor}`}>
+                              {badgeLabel}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {act.hora}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+
+          <DialogFooter className="pt-2 border-t mt-4">
+            <Button onClick={() => setOpenAllActivities(false)} variant="secondary" size="sm" className="w-full">
+              Cerrar Historial
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
