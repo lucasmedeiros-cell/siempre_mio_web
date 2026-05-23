@@ -43,6 +43,31 @@ export default function DashboardPage() {
       const { data: actividades } = await (supabase.from('actividades_log') as any).select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5) as { data: any[] | null }
       const { data: alertas } = await (supabase.from('alertas') as any).select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3) as { data: any[] | null }
 
+      // Carga adicional de actualizaciones en tiempo real para el agregador de actividad reciente
+      const { data: recentAnimals } = await (supabase.from('animales') as any)
+        .select('uuid, codigo, nombre, updated_at')
+        .eq('deleted', false)
+        .order('updated_at', { ascending: false })
+        .limit(3) as { data: any[] | null }
+
+      const { data: recentHealth } = await (supabase.from('eventos_salud') as any)
+        .select('uuid, tipo_evento, medicamento, updated_at, animales(codigo)')
+        .eq('deleted', false)
+        .order('updated_at', { ascending: false })
+        .limit(3) as { data: any[] | null }
+
+      const { data: recentLeche } = await (supabase.from('registros_leche') as any)
+        .select('uuid, litros, fecha, updated_at, animales(codigo)')
+        .eq('deleted', false)
+        .order('updated_at', { ascending: false })
+        .limit(3) as { data: any[] | null }
+
+      const { data: recentTrans } = await (supabase.from('transacciones') as any)
+        .select('uuid, tipo, categoria, monto, updated_at')
+        .eq('deleted', false)
+        .order('updated_at', { ascending: false })
+        .limit(3) as { data: any[] | null }
+
       // KPI: Total Hato
       const totalAnimales = animales?.length || 0
       const machos = animales?.filter(a => a.sexo === 'Macho').length || 0
@@ -73,6 +98,77 @@ export default function DashboardPage() {
       const egresos = transaccionesMes.filter(t => t.tipo === 'Egreso').reduce((sum, t) => sum + (t.monto || 0), 0)
       const balanceMensual = ingresos - egresos
 
+      // Agregador inteligente de actividades
+      const aggregatedActivities: any[] = [];
+
+      // 1. Actividades del log manual (si existen)
+      actividades?.forEach((act) => {
+        const timestamp = new Date(act.fecha).getTime();
+        if (!isNaN(timestamp)) {
+          aggregatedActivities.push({
+            id: act.uuid,
+            texto: act.descripcion || "Actividad registrada",
+            timestamp,
+            hora: new Date(act.fecha).toLocaleDateString()
+          });
+        }
+      });
+
+      // 2. Registro de animales recientes
+      recentAnimals?.forEach((a) => {
+        const dateVal = a.updated_at || a.updatedAt;
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
+        aggregatedActivities.push({
+          id: `animal-${a.uuid}`,
+          texto: `Animal registrado: RP ${a.codigo}${a.nombre ? ` (${a.nombre})` : ''}`,
+          timestamp,
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+        });
+      });
+
+      // 3. Tratamientos o eventos de salud recientes
+      recentHealth?.forEach((h) => {
+        const animCode = h.animales?.codigo || '';
+        const dateVal = h.updated_at || h.updatedAt;
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
+        aggregatedActivities.push({
+          id: `health-${h.uuid}`,
+          texto: `${h.tipo_evento || h.tipoEvento || 'Tratamiento'}${animCode ? ` a RP ${animCode}` : ''}${h.medicamento ? ` con ${h.medicamento}` : ''}`,
+          timestamp,
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+        });
+      });
+
+      // 4. Producción de leche reciente
+      recentLeche?.forEach((l) => {
+        const animCode = l.animales?.codigo || '';
+        const dateVal = l.updated_at || l.updatedAt;
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
+        aggregatedActivities.push({
+          id: `leche-${l.uuid}`,
+          texto: `Ordeño de ${l.litros} L${animCode ? ` (Vaca RP ${animCode})` : ''}`,
+          timestamp,
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+        });
+      });
+
+      // 5. Transacciones financieras recientes
+      recentTrans?.forEach((t) => {
+        const dateVal = t.updated_at || t.updatedAt;
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
+        aggregatedActivities.push({
+          id: `trans-${t.uuid}`,
+          texto: `${t.tipo === 'Ingreso' ? 'Ingreso' : 'Egreso'} de Bs. ${t.monto} (${t.categoria})`,
+          timestamp,
+          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString()
+        });
+      });
+
+      // Ordenar actividades de forma cronológica descendente y tomar las 5 más recientes
+      const sortedActivities = aggregatedActivities
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 5);
+
       return {
         kpis: {
           totalAnimales,
@@ -95,12 +191,12 @@ export default function DashboardPage() {
         flujoCaja: [
           { name: 'Mes Actual', ingresos, egresos }
         ],
-        actividadReciente: actividades?.map((act) => ({
-          id: act.uuid,
-          texto: act.descripcion || "Actividad registrada",
-          hora: new Date(act.fecha).toLocaleDateString(),
+        actividadReciente: sortedActivities.map((act) => ({
+          id: act.id,
+          texto: act.texto,
+          hora: act.hora,
           tipo: "general"
-        })) || [],
+        })),
         alertasSalud: alertas?.map((alerta) => ({
           id: alerta.uuid,
           texto: alerta.titulo,
