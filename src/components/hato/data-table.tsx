@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { exportToCSV, exportToPDF } from "@/lib/export-engine"
-import { Download, Search } from "lucide-react"
+import { Download, Search, Filter } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +35,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -50,6 +57,17 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = React.useState("")
+
+  // Dynamically obtain all unique categories present in the data
+  const uniqueCategorias = React.useMemo(() => {
+    const cats = new Set<string>()
+    data.forEach((row: any) => {
+      if (row.categoria) {
+        cats.add(row.categoria)
+      }
+    })
+    return Array.from(cats).sort()
+  }, [data])
 
   const table = useReactTable({
     data,
@@ -79,15 +97,14 @@ export function DataTable<TData, TValue>({
     exportToPDF(rows, "exportacion_hato", "Reporte de Gestión de Hato")
   }
 
-  // Simplified Faceted Filter for demo
-  const handleCategoriaFilter = (val: string) => {
+  const handleCategoriaFilter = (val: string | null) => {
     const col = table.getColumn("categoria")
-    col?.setFilterValue(val === 'todas' ? undefined : [val])
+    col?.setFilterValue(!val || val === 'todas' ? undefined : [val])
   }
 
   return (
     <div>
-      <div className="flex items-center py-4 gap-2 flex-wrap">
+      <div className="flex items-center py-4 gap-3 flex-wrap">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -98,11 +115,24 @@ export function DataTable<TData, TValue>({
           />
         </div>
         
-        {/* Filtros Rápidos (Mock Faceted Filters) */}
-        <div className="flex gap-2 items-center">
-          <Button variant="outline" size="sm" onClick={() => handleCategoriaFilter('todas')}>Todas</Button>
-          <Button variant="outline" size="sm" onClick={() => handleCategoriaFilter('Vaca en producción')}>Vacas</Button>
-          <Button variant="outline" size="sm" onClick={() => handleCategoriaFilter('Toro reproductor')}>Toros</Button>
+        {/* Filtro Dinámico de Categorías */}
+        <div className="flex items-center gap-2">
+          <Select onValueChange={handleCategoriaFilter} defaultValue="todas">
+            <SelectTrigger className="w-[200px] bg-background">
+              <div className="flex items-center gap-2">
+                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                <SelectValue placeholder="Filtrar por categoría" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las categorías</SelectItem>
+              {uniqueCategorias.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex-1" />
