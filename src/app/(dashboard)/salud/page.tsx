@@ -18,6 +18,20 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 
+function parseDateSafely(dateStr: string | null): Date | null {
+  if (!dateStr) return null;
+  const cleanStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  const parts = cleanStr.split('-');
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function SaludPage() {
   const { fincaId } = useGlobalStore()
   const [openForm, setOpenForm] = useState(false)
@@ -56,11 +70,11 @@ export default function SaludPage() {
         uuid: crypto.randomUUID(),
         animal_id: payload.animalId,
         tipo_evento: payload.tipoEvento,
-        fecha: payload.fecha.split('T')[0],
+        fecha: payload.fecha,
         medicamento: payload.medicamento,
         dosis: payload.dosis,
         costo_bob: payload.costoBob,
-        fecha_proxima_aplicacion: payload.fechaProximaAplicacion ? payload.fechaProximaAplicacion.split('T')[0] : null,
+        fecha_proxima_aplicacion: payload.fechaProximaAplicacion,
         observacion: payload.observacion,
         deleted: false,
         synced: true,
@@ -104,8 +118,8 @@ export default function SaludPage() {
       tipoEvento: form.tipoEvento,
       medicamento: form.medicamento || null,
       dosis: form.dosis || null,
-      fecha: new Date(form.fecha).toISOString(),
-      fechaProximaAplicacion: form.fechaProximaAplicacion ? new Date(form.fechaProximaAplicacion).toISOString() : null,
+      fecha: form.fecha,
+      fechaProximaAplicacion: form.fechaProximaAplicacion || null,
       costoBob: form.costoBob ? parseFloat(form.costoBob) : null,
       observacion: form.observacion || null,
     })
@@ -367,7 +381,10 @@ export default function SaludPage() {
                     return (
                       <TableRow key={evento.uuid}>
                         <TableCell className="font-medium whitespace-nowrap">
-                          {format(new Date(evento.fecha), "dd MMM, yyyy", { locale: es })}
+                          {(() => {
+                            const d = parseDateSafely(evento.fecha);
+                            return d ? format(d, "dd MMM, yyyy", { locale: es }) : "-";
+                          })()}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
@@ -388,13 +405,16 @@ export default function SaludPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {evento.fechaProximaAplicacion ? (
-                            <span className="text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
-                              {format(new Date(evento.fechaProximaAplicacion), "dd/MM/yyyy")}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
+                          {(() => {
+                            const d = parseDateSafely(evento.fechaProximaAplicacion);
+                            return d ? (
+                              <span className="text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
+                                {format(d, "dd/MM/yyyy")}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {evento.costoBob ? evento.costoBob.toLocaleString('es-BO') : '-'}
