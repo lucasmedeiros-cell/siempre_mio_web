@@ -33,6 +33,26 @@ function parseDateSafely(dateStr: string | null): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function parseObservacion(obs: string | null) {
+  if (!obs) return { veterinario: null, observacionLimpia: null };
+  const parts = obs.split('|').map(p => p.trim());
+  let veterinario: string | null = null;
+  const cleanParts: string[] = [];
+
+  parts.forEach(part => {
+    if (part.toLowerCase().startsWith('vet:')) {
+      veterinario = part.substring(4).trim();
+    } else {
+      cleanParts.push(part);
+    }
+  });
+
+  return {
+    veterinario,
+    observacionLimpia: cleanParts.join(' | ') || null
+  };
+}
+
 export default function SaludPage() {
   const { fincaId } = useGlobalStore()
   const [openForm, setOpenForm] = useState(false)
@@ -48,6 +68,7 @@ export default function SaludPage() {
     fechaProximaAplicacion: "",
     costoBob: "",
     observacion: "",
+    veterinario: "",
   })
 
   // Consultar lista de animales para el selector
@@ -100,6 +121,7 @@ export default function SaludPage() {
         fechaProximaAplicacion: "",
         costoBob: "",
         observacion: "",
+        veterinario: "",
       })
     },
     onError: (error) => {
@@ -115,6 +137,11 @@ export default function SaludPage() {
       return
     }
 
+    const obsParts = [];
+    if (form.observacion) obsParts.push(form.observacion);
+    if (form.veterinario) obsParts.push(`Vet: ${form.veterinario}`);
+    const finalObservacion = obsParts.join(' | ') || null;
+
     addEventoMutation.mutate({
       animalId: form.animalId,
       tipoEvento: form.tipoEvento,
@@ -123,7 +150,7 @@ export default function SaludPage() {
       fecha: form.fecha,
       fechaProximaAplicacion: form.fechaProximaAplicacion || null,
       costoBob: form.costoBob ? parseFloat(form.costoBob) : null,
-      observacion: form.observacion || null,
+      observacion: finalObservacion,
     })
   }
 
@@ -302,6 +329,16 @@ export default function SaludPage() {
                     placeholder="0.00"
                     value={form.costoBob}
                     onChange={(e) => setForm({ ...form, costoBob: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="veterinario">Veterinario / Responsable</Label>
+                  <Input
+                    id="veterinario"
+                    placeholder="Nombre del veterinario o encargado"
+                    value={form.veterinario}
+                    onChange={(e) => setForm({ ...form, veterinario: e.target.value })}
                   />
                 </div>
 
@@ -487,6 +524,8 @@ export default function SaludPage() {
               selectedEvento.tipoEvento === 'Desparasitación' ? 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20' :
               'bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20'
 
+            const { veterinario, observacionLimpia } = parseObservacion(selectedEvento.observacion)
+
             return (
               <div className="space-y-4">
                 {/* Tipo de evento */}
@@ -562,15 +601,25 @@ export default function SaludPage() {
                   </div>
                 )}
 
-                {/* Observaciones */}
-                {selectedEvento.observacion && (
-                  <div className="bg-muted/30 rounded-xl border p-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
-                      <ClipboardList className="h-3.5 w-3.5" /> Observaciones
-                    </div>
-                    <p className="text-sm leading-relaxed">{selectedEvento.observacion}</p>
-                  </div>
-                )}
+                 {/* Veterinario */}
+                 {veterinario && (
+                   <div className="bg-muted/30 rounded-xl border p-4">
+                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                       <User className="h-3.5 w-3.5 text-primary" /> Veterinario / Responsable
+                     </div>
+                     <p className="text-base font-bold text-foreground">{veterinario}</p>
+                   </div>
+                 )}
+
+                 {/* Observaciones */}
+                 {observacionLimpia && (
+                   <div className="bg-muted/30 rounded-xl border p-4">
+                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                       <ClipboardList className="h-3.5 w-3.5" /> Observaciones
+                     </div>
+                     <p className="text-sm leading-relaxed">{observacionLimpia}</p>
+                   </div>
+                 )}
               </div>
             )
           })()}
