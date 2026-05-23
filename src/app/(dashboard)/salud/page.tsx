@@ -160,11 +160,17 @@ export default function SaludPage() {
   })
 
   // Cálculos de KPIs
-  const eventosEsteMes = eventos.filter(e => e.fecha && isThisMonth(new Date(e.fecha)))
+  const eventosEsteMes = eventos.filter(e => {
+    const d = parseDateSafely(e.fecha)
+    return d ? isThisMonth(d) : false
+  })
   const costoTotal = eventos.reduce((acc, e) => acc + (e.costoBob || 0), 0)
   
   // Próximas aplicaciones (donde la fechaProximaAplicacion sea futura)
-  const proximasAplicaciones = eventos.filter(e => e.fechaProximaAplicacion && isAfter(new Date(e.fechaProximaAplicacion), new Date()))
+  const proximasAplicaciones = eventos.filter(e => {
+    const d = parseDateSafely(e.fechaProximaAplicacion)
+    return d ? isAfter(d, new Date()) : false
+  })
 
   return (
     <div className="flex flex-col gap-6 pb-10">
