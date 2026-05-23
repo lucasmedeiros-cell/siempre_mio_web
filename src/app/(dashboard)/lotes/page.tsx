@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Users, Plus, Pencil, Trash2 } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, CheckSquare, Square, Trash, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 const PALETTE_COLORS = [
   { hex: "#2D6A2E", label: "Verde Oscuro" },
@@ -55,9 +56,121 @@ export default function LotesPage() {
     color: "#2D6A2E",
   })
 
+  // States for viewing/managing animals in lotes
+  const [selectedLoteForAnimals, setSelectedLoteForAnimals] = useState<LoteWithCount | null>(null)
+  const [animalsDialogOpen, setAnimalsDialogOpen] = useState(false)
+  const [loteAnimals, setLoteAnimals] = useState<any[]>([])
+  const [loadingLoteAnimals, setLoadingLoteAnimals] = useState(false)
+  const [availableAnimals, setAvailableAnimals] = useState<any[]>([])
+  const [loadingAvailable, setLoadingAvailable] = useState(false)
+  const [showAddSection, setShowAddSection] = useState(false)
+  const [selectedAnimalsToAssign, setSelectedAnimalsToAssign] = useState<string[]>([])
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [removingAnimalId, setRemovingAnimalId] = useState<string | null>(null)
+
   useEffect(() => {
     fetchLotes()
   }, [fincaId])
+
+  async function fetchLoteAnimals(loteId: string) {
+    setLoadingLoteAnimals(true)
+    try {
+      const { data, error } = await supabase
+        .from('animales')
+        .select('*')
+        .eq('lote_id', loteId)
+        .eq('deleted', false)
+      
+      if (error) throw error
+      setLoteAnimals(data || [])
+    } catch (error) {
+      console.error("Error fetching lote animals:", error)
+      toast.error("Error al cargar los animales del lote")
+    } finally {
+      setLoadingLoteAnimals(false)
+    }
+  }
+
+  async function fetchAvailableAnimals(loteId: string) {
+    setLoadingAvailable(true)
+    try {
+      const { data, error } = await supabase
+        .from('animales')
+        .select('uuid, codigo, nombre, categoria, raza, lote_id')
+        .eq('deleted', false)
+      
+      if (error) throw error
+      
+      // Filter out animals already in this lote
+      const filtered = (data || []).filter((a: any) => a.lote_id !== loteId)
+      setAvailableAnimals(filtered)
+    } catch (error) {
+      console.error("Error fetching available animals:", error)
+      toast.error("Error al cargar animales disponibles")
+    } finally {
+      setLoadingAvailable(false)
+    }
+  }
+
+  async function handleAssignAnimals() {
+    if (selectedAnimalsToAssign.length === 0 || !selectedLoteForAnimals) return
+    setIsAssigning(true)
+    try {
+      const { error } = await (supabase.from('animales') as any)
+        .update({
+          lote_id: selectedLoteForAnimals.uuid,
+          updated_at: new Date().toISOString()
+        })
+        .in('uuid', selectedAnimalsToAssign)
+
+      if (error) throw error
+      
+      toast.success("Animales asignados correctamente")
+      setSelectedAnimalsToAssign([])
+      setShowAddSection(false)
+      fetchLoteAnimals(selectedLoteForAnimals.uuid)
+      fetchLotes() // refresh counts in main list
+    } catch (error) {
+      console.error("Error assigning animals:", error)
+      toast.error("Error al asignar los animales")
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  async function handleRemoveAnimal(animalUuid: string) {
+    if (!selectedLoteForAnimals) return
+    setRemovingAnimalId(animalUuid)
+    try {
+      const { error } = await (supabase.from('animales') as any)
+        .update({
+          lote_id: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('uuid', animalUuid)
+
+      if (error) throw error
+
+      toast.success("Animal quitado del lote")
+      fetchLoteAnimals(selectedLoteForAnimals.uuid)
+      fetchLotes() // refresh counts in main list
+    } catch (error) {
+      console.error("Error removing animal from lote:", error)
+      toast.error("Error al quitar el animal del lote")
+    } finally {
+      setRemovingAnimalId(null)
+    }
+  }
+
+  // Trigger when Ver Animales is clicked
+  const handleOpenAnimalsDialog = (lote: LoteWithCount) => {
+    setSelectedLoteForAnimals(lote)
+    setAnimalsDialogOpen(true)
+    setShowAddSection(false)
+    setSelectedAnimalsToAssign([])
+    fetchLoteAnimals(lote.uuid)
+    fetchAvailableAnimals(lote.uuid)
+  }
 
   async function fetchLotes() {
     setLoading(true)
@@ -291,7 +404,12 @@ export default function LotesPage() {
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
                     <Trash2 className="w-4 h-4" />
                   </Button>
-                  <Button variant="outline" size="sm" className="ml-auto text-xs">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="ml-auto text-xs"
+                    onClick={() => handleOpenAnimalsDialog(lote)}
+                  >
                     Ver Animales
                   </Button>
                 </div>
@@ -300,6 +418,207 @@ export default function LotesPage() {
           ))}
         </div>
       )}
+
+      {/* Dialog para Ver y Asignar Animales al Lote */}
+      <Dialog open={animalsDialogOpen} onOpenChange={setAnimalsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div 
+                className="w-4 h-4 rounded-full" 
+                style={{ backgroundColor: selectedLoteForAnimals?.color || "#2D6A2E" }} 
+              />
+              <DialogTitle className="text-2xl font-bold">
+                Lote: {selectedLoteForAnimals?.nombre}
+              </DialogTitle>
+            </div>
+            <DialogDescription>
+              Administra los animales asignados a este lote.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 my-4">
+            {/* Header / Actions inside Dialog */}
+            <div className="flex justify-between items-center flex-wrap gap-2">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                Animales en el Lote ({loteAnimals.length})
+              </h3>
+              
+              <Button 
+                onClick={() => {
+                  setShowAddSection(!showAddSection);
+                  setSelectedAnimalsToAssign([]);
+                  if (!showAddSection && selectedLoteForAnimals) {
+                    fetchAvailableAnimals(selectedLoteForAnimals.uuid);
+                  }
+                }}
+                variant={showAddSection ? "secondary" : "default"}
+                size="sm"
+                className="gap-1 text-xs"
+              >
+                {showAddSection ? "Cancelar" : "+ Asignar Animales"}
+              </Button>
+            </div>
+
+            {/* Agregar Animales Section */}
+            {showAddSection && (
+              <Card className="border-primary/20 bg-muted/30 p-4 space-y-4">
+                <div className="space-y-1">
+                  <h4 className="font-semibold text-sm">Selecciona los animales para asignar a este lote</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Se muestran todos los animales del hato que no pertenecen a este lote.
+                  </p>
+                </div>
+
+                {loadingAvailable ? (
+                  <div className="flex justify-center items-center py-6 text-sm text-muted-foreground gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    Cargando animales disponibles...
+                  </div>
+                ) : availableAnimals.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center bg-background rounded border border-dashed">
+                    No hay otros animales disponibles para asignar.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto p-1 border rounded bg-background">
+                    {availableAnimals.map((animal) => {
+                      const isChecked = selectedAnimalsToAssign.includes(animal.uuid);
+                      return (
+                        <div 
+                          key={animal.uuid}
+                          onClick={() => {
+                            if (isChecked) {
+                              setSelectedAnimalsToAssign(prev => prev.filter(id => id !== animal.uuid));
+                            } else {
+                              setSelectedAnimalsToAssign(prev => [...prev, animal.uuid]);
+                            }
+                          }}
+                          className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all hover:bg-muted text-xs ${
+                            isChecked ? "border-primary/50 bg-primary/5" : "border-border"
+                          }`}
+                        >
+                          <div className="text-primary">
+                            {isChecked ? (
+                              <CheckSquare className="w-4 h-4" />
+                            ) : (
+                              <Square className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="truncate">
+                            <span className="font-mono font-bold block">{animal.codigo}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {animal.nombre || "Sin Nombre"} • {animal.raza}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {availableAnimals.length > 0 && (
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => {
+                        setShowAddSection(false);
+                        setSelectedAnimalsToAssign([]);
+                      }}
+                      className="text-xs h-8"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      onClick={handleAssignAnimals}
+                      disabled={selectedAnimalsToAssign.length === 0 || isAssigning}
+                      className="text-xs h-8 gap-1"
+                    >
+                      {isAssigning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      Confirmar Asignación ({selectedAnimalsToAssign.length})
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* List of Lote Animals */}
+            {loadingLoteAnimals ? (
+              <div className="flex justify-center items-center py-12 text-sm text-muted-foreground gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                Cargando animales del lote...
+              </div>
+            ) : loteAnimals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center bg-muted/10 rounded-xl border border-dashed">
+                <Users className="w-10 h-10 text-muted-foreground/30 mb-2" />
+                <h4 className="font-medium text-sm">Este lote está vacío</h4>
+                <p className="text-xs text-muted-foreground max-w-[250px] mt-1 mb-4">
+                  No hay animales asignados a este lote todavía. ¡Haz clic en "+ Asignar Animales" para agregar!
+                </p>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden bg-background">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow>
+                      <TableHead className="w-[120px] font-semibold text-xs">Código / RP</TableHead>
+                      <TableHead className="font-semibold text-xs">Nombre</TableHead>
+                      <TableHead className="font-semibold text-xs">Categoría</TableHead>
+                      <TableHead className="font-semibold text-xs">Raza</TableHead>
+                      <TableHead className="w-[100px] text-right font-semibold text-xs">Acción</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loteAnimals.map((animal) => {
+                      const isMale = animal.sexo === "Macho";
+                      return (
+                        <TableRow key={animal.uuid} className="hover:bg-muted/30">
+                          <TableCell className="font-mono font-bold text-xs flex items-center gap-1.5 py-2.5">
+                            <span className="text-sm">{isMale ? '🐂' : '🐄'}</span>
+                            {animal.codigo}
+                          </TableCell>
+                          <TableCell className="text-xs py-2.5">{animal.nombre || "-"}</TableCell>
+                          <TableCell className="text-xs py-2.5">
+                            <Badge variant="outline" className="px-1.5 py-0 text-[10px] bg-background">
+                              {animal.categoria}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs py-2.5">{animal.raza}</TableCell>
+                          <TableCell className="text-right py-2.5">
+                            <Button 
+                              onClick={() => handleRemoveAnimal(animal.uuid)}
+                              disabled={removingAnimalId === animal.uuid}
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 text-[10px] gap-1"
+                              title="Quitar del lote"
+                            >
+                              {removingAnimalId === animal.uuid ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Trash className="w-3 h-3" />
+                              )}
+                              Quitar
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t mt-4">
+            <Button onClick={() => setAnimalsDialogOpen(false)} variant="secondary" size="sm" className="w-full">
+              Cerrar Diálogo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
