@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,11 +20,24 @@ const REPORT_TYPES = [
 export default function ReportesPage() {
   const [reportType, setReportType] = useState<string>("")
   const [loading, setLoading] = useState(false)
+  const [recentReports, setRecentReports] = useState<any[]>([])
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
-  async function generatePDF() {
-    if (!reportType) {
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('recent_reports')
+      if (stored) {
+        setRecentReports(JSON.parse(stored))
+      }
+    } catch (e) {
+      console.error("Error reading recent reports:", e)
+    }
+  }, [])
+
+  async function generatePDF(typeToGenerate?: string, customFilename?: string) {
+    const targetType = typeToGenerate || reportType
+    if (!targetType) {
       toast.error("Selecciona un tipo de reporte")
       return
     }
@@ -53,7 +66,7 @@ export default function ReportesPage() {
       doc.line(14, 30, 196, 30)
 
       // Report Info
-      const selectedReport = REPORT_TYPES.find(r => r.id === reportType)
+      const selectedReport = REPORT_TYPES.find(r => r.id === targetType)
       doc.setFontSize(16)
       doc.setTextColor(0)
       doc.text(selectedReport?.title || "Reporte del Hato", 14, 45)
@@ -63,7 +76,7 @@ export default function ReportesPage() {
       doc.text(`Finca: ${fincaId || "Todas las fincas"}`, 14, 57)
 
       // Data Fetching and Table Rendering
-      if (reportType === 'inventario_general') {
+      if (targetType === 'inventario_general') {
         let query = (supabase.from('animales') as any).select('codigo, nombre, categoria, raza, estado').eq('deleted', false)
         if (fincaId) query = query.eq('propietarioId', fincaId)
         
@@ -95,7 +108,37 @@ export default function ReportesPage() {
         doc.text(`Página ${i} de ${pageCount} - Generado por Siempre Mío Web`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' })
       }
 
-      doc.save(`Reporte_${reportType}_${new Date().getTime()}.pdf`)
+      const filename = customFilename || `Reporte_${targetType}_${new Date().getTime()}.pdf`
+      doc.save(filename)
+
+      // Guardar en reportes recientes
+      const blob = doc.output('blob')
+      const sizeKb = Math.round(blob.size / 1024)
+
+      const newReport = {
+        id: crypto.randomUUID(),
+        title: selectedReport?.title || "Reporte del Hato",
+        filename,
+        timestamp: Date.now(),
+        sizeKb,
+        type: targetType
+      }
+
+      const stored = localStorage.getItem('recent_reports')
+      let list: any[] = []
+      if (stored) {
+        try {
+          list = JSON.parse(stored)
+        } catch (e) {
+          list = []
+        }
+      }
+
+      list = list.filter(r => r.filename !== filename)
+      const updated = [newReport, ...list].slice(0, 5)
+      setRecentReports(updated)
+      localStorage.setItem('recent_reports', JSON.stringify(updated))
+
       toast.success("Reporte generado con éxito")
     } catch (error) {
       console.error("Error generating PDF:", error)
@@ -189,7 +232,7 @@ export default function ReportesPage() {
                   <Printer className="w-4 h-4" /> Previsualizar
                 </Button>
                 <Button 
-                  onClick={generatePDF} 
+                  onClick={() => generatePDF()} 
                   disabled={loading || !reportType}
                   className="gap-2 min-w-[140px]"
                 >
@@ -226,22 +269,38 @@ export default function ReportesPage() {
               <CardTitle className="text-lg">Reportes Recientes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50 group hover:border-primary/50 transition-colors cursor-default">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-background rounded border border-border/50 text-red-500">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold truncate max-w-[150px]">inv_gen_2026.pdf</p>
-                      <p className="text-[10px] text-muted-foreground">Hace {i * 2} horas • 145 KB</p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Download className="w-3 h-3" />
-                  </Button>
+              {recentReports.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-muted/10 p-4">
+                  No has generado reportes recientemente.
                 </div>
-              ))}
+              ) : (
+                recentReports.map((report) => (
+                  <div key={report.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50 group hover:border-primary/50 transition-colors cursor-default">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 bg-background rounded border border-border/50 text-red-500 shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold truncate max-w-[160px]" title={report.filename}>
+                          {report.filename}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {new Date(report.timestamp).toLocaleDateString()} • {report.sizeKb} KB
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      onClick={() => generatePDF(report.type, report.filename)}
+                      title="Volver a generar y descargar"
+                    >
+                      <Download className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
 
