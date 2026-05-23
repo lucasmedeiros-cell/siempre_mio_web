@@ -109,13 +109,13 @@ export default function LecheriaPage() {
       const supabase = createClient()
       const p = {
         uuid: payload.uuid,
-        vacaId: payload.vacaId || null,
-        fecha: new Date().toISOString(),
+        vaca_id: payload.vacaId || null,
+        fecha: new Date().toISOString().split('T')[0],
         turno: payload.turno,
         litros: payload.litros,
         synced: true,
         deleted: false,
-        updatedAt: payload.updatedAt
+        updated_at: payload.updatedAt || new Date().toISOString()
       }
       
       const { error } = await (supabase.from('registros_leche') as any).insert([p])

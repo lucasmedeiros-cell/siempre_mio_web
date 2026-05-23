@@ -57,11 +57,16 @@ export default function FinanzasPage() {
     mutationFn: async (payload: any) => {
       const supabase = createClient()
       const dataPayload = {
-        ...payload,
         uuid: crypto.randomUUID(),
+        tipo: payload.tipo,
+        categoria: payload.categoria,
+        monto: payload.monto,
+        fecha: payload.fecha.split('T')[0],
+        observacion: payload.observacion,
+        propietario_id: payload.propietarioId || null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
       const { error } = await (supabase.from('transacciones') as any).insert([dataPayload])
       if (error) throw error
@@ -91,11 +96,16 @@ export default function FinanzasPage() {
     mutationFn: async (payload: any) => {
       const supabase = createClient()
       const dataPayload = {
-        ...payload,
         uuid: crypto.randomUUID(),
+        nombre: payload.nombre,
+        categoria: payload.categoria,
+        stock_actual: payload.stockActual,
+        stock_minimo: payload.stockMinimo,
+        unidad: payload.unidad,
+        propietario_id: payload.propietarioId || null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
       const { error } = await (supabase.from('inventarios') as any).insert([dataPayload])
       if (error) throw error
@@ -187,9 +197,9 @@ export default function FinanzasPage() {
         id: i.uuid,
         nombre: i.nombre,
         categoria: i.categoria || 'Insumo',
-        stockActual: i.stockActual || 0,
-        stockMinimo: i.stockMinimo || 10,
-        stockMaximo: (i.stockMinimo || 10) * 3 // Simulamos maximo para la barra
+        stockActual: i.stock_actual || i.stockActual || 0,
+        stockMinimo: i.stock_minimo || i.stockMinimo || 10,
+        stockMaximo: (i.stock_minimo || i.stock_minimo || i.stockMinimo || 10) * 3
       }))
     }
   })

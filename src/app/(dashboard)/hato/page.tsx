@@ -46,16 +46,30 @@ export default function HatoPage() {
       const { data, error } = await supabase.from('animales')
         .select('*')
         .eq('deleted', false)
-        .order('createdAt', { ascending: false, nullsFirst: false })
       
-      if (error && error.code !== 'PGRST116') {
-        // Ignoramos error si no encuentra la columna createdAt y ordenamos por defecto
-        const { data: fallbackData } = await supabase.from('animales')
-          .select('*')
-          .eq('deleted', false)
-        return (fallbackData || []) as Animal[]
-      }
-      return (data || []) as Animal[]
+      if (error) throw error
+
+      return (data || []).map((a: any) => ({
+        uuid: a.uuid,
+        codigo: a.codigo,
+        nombre: a.nombre,
+        raza: a.raza,
+        sexo: a.sexo,
+        categoria: a.categoria,
+        propietarioId: a.propietario_id || a.propietarioId || null,
+        procedencia: a.procedencia,
+        fechaNacimiento: a.fecha_nacimiento || a.fechaNacimiento || null,
+        pesoNacimiento: a.peso_nacimiento || a.pesoNacimiento || null,
+        pesoActual: a.peso_actual || a.pesoActual || null,
+        precioCompraBob: a.precio_compra_bob || a.precioCompraBob || null,
+        estado: a.estado,
+        loteId: a.lote_id || a.loteId || null,
+        madreId: a.madre_id || a.madreId || null,
+        padreId: a.padre_id || a.padreId || null,
+        synced: a.synced,
+        deleted: a.deleted,
+        updatedAt: a.updated_at || a.updatedAt || ''
+      })) as Animal[]
     }
   })
 
@@ -64,16 +78,30 @@ export default function HatoPage() {
     mutationFn: async (newAnimal: Partial<Animal>) => {
       const supabase = createClient()
       const payload = {
-        ...newAnimal,
         uuid: crypto.randomUUID(),
+        codigo: newAnimal.codigo,
+        nombre: newAnimal.nombre || '',
+        raza: newAnimal.raza || '',
+        sexo: newAnimal.sexo || 'Macho',
+        categoria: newAnimal.categoria || 'Ternero',
+        propietario_id: newAnimal.propietarioId || null,
+        procedencia: newAnimal.procedencia || 'Nacimiento',
+        fecha_nacimiento: newAnimal.fechaNacimiento || null,
+        peso_nacimiento: newAnimal.pesoNacimiento || null,
+        peso_actual: newAnimal.pesoActual || null,
+        precio_compra_bob: newAnimal.precioCompraBob || null,
+        estado: newAnimal.estado || 'Activo',
+        lote_id: newAnimal.loteId || null,
+        madre_id: newAnimal.madreId || null,
+        padre_id: newAnimal.padreId || null,
         synced: true,
         deleted: false,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
 
       const { error } = await (supabase.from('animales') as any).insert([payload])
       if (error) throw error
-      return payload as Animal
+      return payload as any
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['animales'] })

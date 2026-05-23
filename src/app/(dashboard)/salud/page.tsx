@@ -53,11 +53,18 @@ export default function SaludPage() {
     mutationFn: async (payload: any) => {
       const supabase = createClient()
       const dataPayload = {
-        ...payload,
         uuid: crypto.randomUUID(),
+        animal_id: payload.animalId,
+        tipo_evento: payload.tipoEvento,
+        fecha: payload.fecha.split('T')[0],
+        medicamento: payload.medicamento,
+        dosis: payload.dosis,
+        costo_bob: payload.costoBob,
+        fecha_proxima_aplicacion: payload.fechaProximaAplicacion ? payload.fechaProximaAplicacion.split('T')[0] : null,
+        observacion: payload.observacion,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
       const { error } = await (supabase.from('eventos_salud') as any).insert([dataPayload])
       if (error) throw error
@@ -122,7 +129,19 @@ export default function SaludPage() {
         .order('fecha', { ascending: false })
 
       if (error) throw error
-      return (data || []) as any[]
+      
+      return (data || []).map((e: any) => ({
+        uuid: e.uuid,
+        animalId: e.animal_id || e.animalId || null,
+        tipoEvento: e.tipo_evento || e.tipoEvento || 'Tratamiento',
+        fecha: e.fecha,
+        medicamento: e.medicamento,
+        dosis: e.dosis,
+        costoBob: e.costo_bob || e.costoBob || 0,
+        fechaProximaAplicacion: e.fecha_proxima_aplicacion || e.fechaProximaAplicacion || null,
+        observacion: e.observacion,
+        animales: e.animales
+      })) as any[]
     }
   })
 

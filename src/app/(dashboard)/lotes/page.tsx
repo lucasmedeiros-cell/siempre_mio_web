@@ -67,7 +67,7 @@ export default function LotesPage() {
         .eq('deleted', false)
 
       if (fincaId) {
-        query = query.eq('fincaId', fincaId)
+        query = query.eq('finca_id', fincaId)
       }
 
       const { data: lotesData, error: lotesError } = await query
@@ -84,13 +84,18 @@ export default function LotesPage() {
           const { count, error: countError } = await (supabase
             .from('animales') as any)
             .select('*', { count: 'exact', head: true })
-            .eq('loteId', lote.uuid)
+            .eq('lote_id', lote.uuid)
             .eq('deleted', false)
 
           if (countError) console.error("Error fetching count for lote", lote.uuid, countError)
 
           return {
-            ...lote,
+            uuid: lote.uuid,
+            nombre: lote.nombre,
+            descripcion: lote.descripcion,
+            color: lote.color,
+            categoriaLote: lote.categoria_lote || lote.categoriaLote || '',
+            fincaId: lote.finca_id || lote.fincaId || null,
             animalCount: count || 0
           }
         })
@@ -114,13 +119,13 @@ export default function LotesPage() {
       const payload = {
         uuid: crypto.randomUUID(),
         nombre: form.nombre,
-        categoriaLote: form.categoriaLote,
+        categoria_lote: form.categoriaLote,
         descripcion: form.descripcion || null,
         color: form.color,
-        fincaId: fincaId || null,
+        finca_id: fincaId || null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
 
       const { error } = await (supabase.from('lotes') as any).insert([payload])

@@ -68,12 +68,22 @@ export default function TareasPage() {
         .eq('deleted', false)
 
       if (fincaId) {
-        query = query.eq('propietarioId', fincaId)
+        query = query.eq('propietario_id', fincaId)
       }
 
       const { data, error } = await query
       if (error) throw error
-      setTareas((data || []) as Tarea[])
+
+      const mappedTareas = (data || []).map((t: any) => ({
+        uuid: t.uuid,
+        titulo: t.titulo,
+        estado: t.estado,
+        prioridad: t.prioridad,
+        fechaLimite: t.fecha_limite || t.fechaLimite || null,
+        asignadoA: t.asignado_a || t.asignadoA || null
+      })) as Tarea[]
+
+      setTareas(mappedTareas)
     } catch (error) {
       console.error("Error fetching tareas:", error)
       toast.error("Error al cargar las tareas")
@@ -93,12 +103,12 @@ export default function TareasPage() {
         titulo: form.titulo,
         estado: "Pendiente",
         prioridad: form.prioridad,
-        fechaLimite: form.fechaLimite ? new Date(form.fechaLimite).toISOString() : null,
-        asignadoA: form.asignadoA || null,
-        propietarioId: fincaId || null,
+        fecha_limite: form.fechaLimite ? new Date(form.fechaLimite).toISOString() : null,
+        asignado_a: form.asignadoA || null,
+        propietario_id: fincaId || null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
 
       const { error } = await (supabase.from('tareas') as any).insert([payload])
@@ -125,7 +135,7 @@ export default function TareasPage() {
     try {
       const { error } = await (supabase
         .from('tareas') as any)
-        .update({ estado: nuevoEstado, updatedAt: new Date().toISOString() })
+        .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
         .eq('uuid', uuid)
 
       if (error) throw error

@@ -57,12 +57,21 @@ export default function ConfinamientoPage() {
         .eq('deleted', false)
 
       if (fincaId) {
-        query = query.eq('propietarioId', fincaId)
+        query = query.eq('propietario_id', fincaId)
       }
 
       const { data, error } = await query
       if (error) throw error
-      setRecetas((data || []) as Receta[])
+
+      const mappedRecetas = (data || []).map((r: any) => ({
+        uuid: r.uuid,
+        nombre: r.nombre,
+        proteinaTotal: r.proteina_total || r.proteinaTotal || 0,
+        costoTotal: r.costo_total || r.costoTotal || 0,
+        ingredientesJson: r.ingredientes_json || r.ingredientesJson || '[]'
+      })) as Receta[]
+
+      setRecetas(mappedRecetas)
     } catch (error) {
       console.error("Error fetching recetas:", error)
       toast.error("Error al cargar las recetas de dieta")
@@ -84,13 +93,13 @@ export default function ConfinamientoPage() {
       const payload = {
         uuid: crypto.randomUUID(),
         nombre: form.nombre,
-        proteinaTotal: parseFloat(form.proteinaTotal),
-        costoTotal: parseFloat(form.costoTotal),
-        ingredientesJson: JSON.stringify(ingredientesList),
-        propietarioId: fincaId || null,
+        proteina_total: parseFloat(form.proteinaTotal),
+        costo_total: parseFloat(form.costoTotal),
+        ingredientes_json: JSON.stringify(ingredientesList),
+        propietario_id: fincaId || null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
 
       const { error } = await (supabase.from('recetas_info') as any).insert([payload])

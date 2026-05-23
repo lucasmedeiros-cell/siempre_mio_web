@@ -73,15 +73,15 @@ export default function PotrerosPage() {
       const payload = {
         uuid: crypto.randomUUID(),
         nombre: form.nombre,
-        superficieHa: parseFloat(form.superficieHa),
+        superficie_ha: parseFloat(form.superficieHa),
         condicion: parseFloat(form.condicion) / 100,
         estado: form.estado === 'ocupado' ? 'Ocupado' : form.estado === 'descanso' ? 'Descanso' : 'Libre',
-        alturaPastoMetros: 0.2,
-        diasDescanso: 0,
-        fechaUltimaLiberacion: null,
+        altura_pasto_metros: 0.2,
+        dias_descanso: 0,
+        fecha_ultima_liberacion: null,
         deleted: false,
         synced: true,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       }
 
       const { error } = await (supabase.from('potreros') as any).insert([payload])
@@ -112,7 +112,16 @@ export default function PotrerosPage() {
       if (error) throw error
       
       return (data || []).map((p: any) => ({
-        ...p,
+        uuid: p.uuid,
+        nombre: p.nombre,
+        superficieHa: p.superficie_ha || p.superficieHa || 0,
+        condicion: p.condicion || 0,
+        alturaPastoMetros: p.altura_pasto_metros || p.alturaPastoMetros || 0,
+        diasDescanso: p.dias_descanso || p.diasDescanso || 0,
+        fechaUltimaLiberacion: p.fecha_ultima_liberacion || p.fechaUltimaLiberacion || null,
+        deleted: p.deleted,
+        synced: p.synced,
+        updatedAt: p.updated_at || p.updatedAt || '',
         // Adaptamos el estado real al formato que espera la UI (libre, en_uso, descanso)
         estado: p.estado.toLowerCase() === 'ocupado' || p.estado === 'En Uso' ? 'en_uso' 
               : p.estado.toLowerCase() === 'descanso' ? 'descanso' : 'libre',
