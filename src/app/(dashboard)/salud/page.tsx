@@ -130,32 +130,50 @@ export default function SaludPage() {
     queryKey: ['eventos_salud', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await (supabase
+      
+      // 1. Obtener animales para mapear
+      const { data: animalRows, error: animalError } = await supabase
+        .from('animales')
+        .select('uuid, codigo, nombre')
+        .eq('deleted', false)
+
+      if (animalError) throw animalError
+
+      // Mapeo rápido de animales
+      const animalMap: Record<string, { codigo: string; nombre: string }> = {}
+      ;(animalRows || []).forEach((a: any) => {
+        animalMap[a.uuid] = {
+          codigo: a.codigo,
+          nombre: a.nombre || ''
+        }
+      })
+
+      // 2. Obtener eventos de salud
+      const { data: saludRows, error: saludError } = await (supabase
         .from('eventos_salud') as any)
-        .select(`
-          *,
-          animales (
-            codigo,
-            nombre
-          )
-        `)
+        .select('*')
         .eq('deleted', false)
         .order('fecha', { ascending: false })
 
-      if (error) throw error
+      if (saludError) throw saludError
       
-      return (data || []).map((e: any) => ({
-        uuid: e.uuid,
-        animalId: e.animal_id || e.animalId || null,
-        tipoEvento: e.tipo_evento || e.tipoEvento || 'Tratamiento',
-        fecha: e.fecha,
-        medicamento: e.medicamento,
-        dosis: e.dosis,
-        costoBob: e.costo_bob || e.costoBob || 0,
-        fechaProximaAplicacion: e.fecha_proxima_aplicacion || e.fechaProximaAplicacion || null,
-        observacion: e.observacion,
-        animales: e.animales
-      })) as any[]
+      return (saludRows || []).map((e: any) => {
+        const aId = e.animal_id || e.animalId || null
+        const aInfo = aId ? animalMap[aId] : null
+        
+        return {
+          uuid: e.uuid,
+          animalId: aId,
+          tipoEvento: e.tipo_evento || e.tipoEvento || 'Tratamiento',
+          fecha: e.fecha,
+          medicamento: e.medicamento,
+          dosis: e.dosis,
+          costoBob: e.costo_bob || e.costoBob || 0,
+          fechaProximaAplicacion: e.fecha_proxima_aplicacion || e.fechaProximaAplicacion || null,
+          observacion: e.observacion,
+          animales: aInfo ? { codigo: aInfo.codigo, nombre: aInfo.nombre } : null
+        }
+      }) as any[]
     }
   })
 

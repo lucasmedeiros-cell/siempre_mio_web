@@ -48,12 +48,37 @@ export default function LecheriaPage() {
       const hoy = new Date().toISOString().split('T')[0]
       const hace30dias = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
       
-      const { data: registros } = await supabase.from('registros_leche')
-        .select('*, animales(nombre, codigo)')
+      // 1. Obtener animales para el mapeo
+      const { data: animalRows, error: animalError } = await supabase.from('animales')
+        .select('uuid, codigo, nombre')
+        .eq('deleted', false)
+
+      if (animalError) throw animalError
+
+      const animalMap: Record<string, { codigo: string; nombre: string }> = {}
+      ;(animalRows || []).forEach((a: any) => {
+        animalMap[a.uuid] = {
+          codigo: a.codigo,
+          nombre: a.nombre || ''
+        }
+      })
+
+      // 2. Obtener registros de leche
+      const { data: registros, error: registrosError } = await supabase.from('registros_leche')
+        .select('*')
         .eq('deleted', false)
         .gte('fecha', hace30dias)
+
+      if (registrosError) throw registrosError
         
-      const regs = (registros || []) as any[]
+      const regs = (registros || []).map((r: any) => {
+        const aId = r.vaca_id || r.vacaId || null
+        const aInfo = aId ? animalMap[aId] : null
+        return {
+          ...r,
+          animales: aInfo ? { codigo: aInfo.codigo, nombre: aInfo.nombre } : null
+        }
+      }) as any[]
       
       // KPIs Día Actual
       const regsHoy = regs.filter(r => r.fecha.startsWith(hoy))

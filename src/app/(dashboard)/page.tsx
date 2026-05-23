@@ -47,13 +47,21 @@ export default function DashboardPage() {
     queryFn: async () => {
       const supabase = createClient()
 
-      // Fetch de las principales tablas
-      const { data: animales } = await (supabase.from('animales') as any).select('sexo, categoria, estado').eq('deleted', false) as { data: any[] | null }
+      // Fetch de las principales tablas (obtenemos uuid y codigo para el mapa de relaciones)
+      const { data: animales } = await (supabase.from('animales') as any).select('uuid, codigo, sexo, categoria, estado').eq('deleted', false) as { data: any[] | null }
       const { data: potreros } = await (supabase.from('potreros') as any).select('estado').eq('deleted', false) as { data: any[] | null }
       const { data: leche } = await (supabase.from('registros_leche') as any).select('litros, fecha').eq('deleted', false) as { data: any[] | null }
       const { data: transacciones } = await (supabase.from('transacciones') as any).select('tipo, monto, fecha').eq('deleted', false) as { data: any[] | null }
       const { data: actividades } = await (supabase.from('actividades_log') as any).select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5) as { data: any[] | null }
       const { data: alertas } = await (supabase.from('alertas') as any).select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3) as { data: any[] | null }
+
+      // Mapa de animal uuid a codigo
+      const animalMap: Record<string, string> = {}
+      ;(animales || []).forEach((a: any) => {
+        if (a.uuid) {
+          animalMap[a.uuid] = a.codigo || ''
+        }
+      })
 
       // Carga adicional de actualizaciones en tiempo real para el agregador de actividad reciente (límites aumentados a 20 para el Ver Todo)
       const { data: recentAnimals } = await (supabase.from('animales') as any)
@@ -63,13 +71,13 @@ export default function DashboardPage() {
         .limit(20) as { data: any[] | null }
 
       const { data: recentHealth } = await (supabase.from('eventos_salud') as any)
-        .select('uuid, tipo_evento, medicamento, updated_at, animales(codigo)')
+        .select('uuid, animal_id, tipo_evento, medicamento, updated_at')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
         .limit(20) as { data: any[] | null }
 
       const { data: recentLeche } = await (supabase.from('registros_leche') as any)
-        .select('uuid, litros, fecha, updated_at, animales(codigo)')
+        .select('uuid, vaca_id, litros, fecha, updated_at')
         .eq('deleted', false)
         .order('updated_at', { ascending: false })
         .limit(20) as { data: any[] | null }
@@ -142,7 +150,8 @@ export default function DashboardPage() {
 
       // 3. Tratamientos o eventos de salud recientes
       recentHealth?.forEach((h) => {
-        const animCode = h.animales?.codigo || '';
+        const aId = h.animal_id || h.animalId || '';
+        const animCode = aId ? (animalMap[aId] || '') : '';
         const dateVal = h.updated_at || h.updatedAt;
         const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
         aggregatedActivities.push({
@@ -156,7 +165,8 @@ export default function DashboardPage() {
 
       // 4. Producción de leche reciente
       recentLeche?.forEach((l) => {
-        const animCode = l.animales?.codigo || '';
+        const vId = l.vaca_id || l.vacaId || '';
+        const animCode = vId ? (animalMap[vId] || '') : '';
         const dateVal = l.updated_at || l.updatedAt;
         const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
         aggregatedActivities.push({
