@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Users, Plus, Pencil, Trash2, CheckSquare, Square, Trash, Loader2 } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, CheckSquare, Square, Trash, Loader2, MapPin, Weight, Leaf, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import {
   Dialog,
   DialogContent,
@@ -39,6 +41,16 @@ interface LoteWithCount {
   color: string
   categoriaLote: string
   animalCount: number
+  totalKgVivo: number
+  demandaMateriaVerde: number
+  // Potrero activo actual (fecha_salida_real IS NULL)
+  potreroActualNombre: string | null
+  potreroActualUuid: string | null
+  fechaIngresoActual: string | null
+  // Último potrero anterior (el que tuvo fecha_salida_real más reciente)
+  ultimoPotreroNombre: string | null
+  ultimoPotreroUuid: string | null
+  ultimoPotreroFechaSalida: string | null
 }
 
 export default function LotesPage() {
@@ -197,28 +209,109 @@ export default function LotesPage() {
         return
       }
 
-      // Fetch animal counts for each lote
-      const lotesWithCounts = await Promise.all(
-        (lotesData || []).map(async (lote: any) => {
-          const { count, error: countError } = await (supabase
-            .from('animales') as any)
-            .select('*', { count: 'exact', head: true })
-            .eq('lote_id', lote.uuid)
-            .eq('deleted', false)
+      // Fetch potreros map for name lookups
+      const { data: potreroRows } = await supabase
+        .from('potreros')
+        .select('uuid, nombre')
+        .eq('deleted', false)
+      const potreroMap: Record<string, string> = {}
+      ;(potreroRows || []).forEach((p: any) => { potreroMap[p.uuid] = p.nombre })
 
-          if (countError) console.error("Error fetching count for lote", lote.uuid, countError)
+      // Fetch ALL lote-potrero occupancies ordered by fecha_ingreso desc
+      const { data: ocupaciones } = await (supabase
+        .from('ocupaciones_potrero') as any)
+        .select('lote_id, potrero_id, fecha_ingreso, fecha_salida_real, updated_at')
+        .eq('deleted', false)
+        .order('fecha_ingreso', { ascending: false })
 
-          return {
-            uuid: lote.uuid,
-            nombre: lote.nombre,
-            descripcion: lote.descripcion,
-            color: lote.color,
-            categoriaLote: lote.categoria_lote || lote.categoriaLote || '',
-            fincaId: lote.finca_id || lote.fincaId || null,
-            animalCount: count || 0
+      // Para cada lote: separar la ocupación activa (sin fecha_salida_real)
+      // del último potrero anterior (con fecha_salida_real)
+      const potreroActualByLote: Record<string, any> = {}
+      const ultimoPotreroByLote: Record<string, any> = {}
+      ;(ocupaciones || []).forEach((occ: any) => {
+        if (!occ.fecha_salida_real) {
+          // Ocupación activa: el lote está aquí ahora
+          if (!potreroActualByLote[occ.lote_id]) {
+            potreroActualByLote[occ.lote_id] = occ
+          }
+        } else {
+          // Ocupación histórica: registra el último potrero con fecha de salida
+          if (!ultimoPotreroByLote[occ.lote_id]) {
+            ultimoPotreroByLote[occ.lote_id] = occ
+          }
+        }
+      })
+
+      // Fetch animals per lote (uuid, lote_id) para contar
+      const { data: allAnimals } = await supabase
+        .from('animales')
+        .select('uuid, lote_id')
+        .eq('deleted', false)
+
+      const countByLote: Record<string, number> = {}
+      const animalIdsByLote: Record<string, string[]> = {}
+      ;(allAnimals || []).forEach((a: any) => {
+        if (a.lote_id) {
+          countByLote[a.lote_id] = (countByLote[a.lote_id] || 0) + 1
+          if (!animalIdsByLote[a.lote_id]) animalIdsByLote[a.lote_id] = []
+          animalIdsByLote[a.lote_id].push(a.uuid)
+        }
+      })
+
+      // Fetch LATEST weight record per animal from registros_peso
+      // Obtenemos todos los registros de peso ordenados por fecha desc,
+      // y nos quedamos con el más reciente de cada animal
+      const allAnimalIds = (allAnimals || []).map((a: any) => a.uuid)
+      let latestWeightByAnimal: Record<string, number> = {}
+
+      if (allAnimalIds.length > 0) {
+        const { data: weightRecords } = await (supabase
+          .from('registros_peso') as any)
+          .select('animal_id, peso, fecha_pesaje')
+          .eq('deleted', false)
+          .in('animal_id', allAnimalIds)
+          .order('fecha_pesaje', { ascending: false })
+
+        ;(weightRecords || []).forEach((r: any) => {
+          // Solo guardamos el primer registro (más reciente) por animal
+          if (!(r.animal_id in latestWeightByAnimal)) {
+            latestWeightByAnimal[r.animal_id] = r.peso || 0
           }
         })
-      )
+      }
+
+      // Build weight sum per lote using latest weight record per animal
+      const weightByLote: Record<string, number> = {}
+      Object.entries(animalIdsByLote).forEach(([loteId, animalIds]) => {
+        weightByLote[loteId] = animalIds.reduce((sum, animalId) => {
+          return sum + (latestWeightByAnimal[animalId] || 0)
+        }, 0)
+      })
+
+      const lotesWithCounts: LoteWithCount[] = (lotesData || []).map((lote: any) => {
+        const occActual = potreroActualByLote[lote.uuid] || null
+        const occUltimo = ultimoPotreroByLote[lote.uuid] || null
+        const totalKgVivo = weightByLote[lote.uuid] || 0
+        return {
+          uuid: lote.uuid,
+          nombre: lote.nombre,
+          descripcion: lote.descripcion,
+          color: lote.color,
+          categoriaLote: lote.categoria_lote || lote.categoriaLote || '',
+          fincaId: lote.finca_id || lote.fincaId || null,
+          animalCount: countByLote[lote.uuid] || 0,
+          totalKgVivo: parseFloat(totalKgVivo.toFixed(1)),
+          demandaMateriaVerde: parseFloat((totalKgVivo * 0.15).toFixed(1)),
+          // Potrero activo actual
+          potreroActualNombre: occActual ? (potreroMap[occActual.potrero_id] || null) : null,
+          potreroActualUuid: occActual ? occActual.potrero_id : null,
+          fechaIngresoActual: occActual ? (occActual.fecha_ingreso || null) : null,
+          // Último potrero con fecha de salida
+          ultimoPotreroNombre: occUltimo ? (potreroMap[occUltimo.potrero_id] || null) : null,
+          ultimoPotreroUuid: occUltimo ? occUltimo.potrero_id : null,
+          ultimoPotreroFechaSalida: occUltimo ? (occUltimo.fecha_salida_real || null) : null,
+        }
+      })
 
       setLotes(lotesWithCounts)
     } catch (error) {
@@ -427,11 +520,75 @@ export default function LotesPage() {
                   {lote.animalCount}
                 </Badge>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
                   {lote.descripcion || "Sin descripción"}
                 </p>
-                <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-border/50">
+
+                {/* Métricas de Peso y Demanda */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border bg-muted/30 p-3 space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
+                      <Weight className="h-3 w-3" /> Peso Vivo Total
+                    </div>
+                    <p className="text-base font-bold text-foreground">
+                      {lote.totalKgVivo > 0 ? `${lote.totalKgVivo.toLocaleString('es-BO')} kg` : <span className="text-muted-foreground text-xs">Sin datos</span>}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-green-500/5 border-green-500/20 p-3 space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-[10px] text-green-700 dark:text-green-400 font-semibold uppercase tracking-wide">
+                      <Leaf className="h-3 w-3" /> Materia Verde/día
+                    </div>
+                    <p className="text-base font-bold text-green-700 dark:text-green-400">
+                      {lote.demandaMateriaVerde > 0 ? `${lote.demandaMateriaVerde.toLocaleString('es-BO')} kg` : <span className="text-muted-foreground text-xs font-normal">Sin datos</span>}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Potrero Actual y Último Potrero */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                  {/* Potrero Activo Actual */}
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Potrero Actual</p>
+                      {lote.potreroActualNombre ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-bold truncate">{lote.potreroActualNombre}</span>
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-mono bg-background">
+                            {lote.potreroActualUuid?.slice(0, 8).toUpperCase()}
+                          </Badge>
+                          {lote.fechaIngresoActual && (
+                            <span className="text-[9px] text-muted-foreground">
+                              desde {format(new Date(lote.fechaIngresoActual), "dd MMM yyyy", { locale: es })}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Sin potrero asignado</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Último Potrero con Fecha de Salida */}
+                  {lote.ultimoPotreroNombre && (
+                    <div className="flex items-center gap-2 border-t border-border/50 pt-2">
+                      <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Último Potrero</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-medium truncate">{lote.ultimoPotreroNombre}</span>
+                          {lote.ultimoPotreroFechaSalida && (
+                            <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold">
+                              Salida: {format(new Date(lote.ultimoPotreroFechaSalida), "dd MMM yyyy", { locale: es })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/50">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
                     <Pencil className="w-4 h-4" />
                   </Button>
