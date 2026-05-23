@@ -12,7 +12,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Activity, Plus, Syringe, Stethoscope, AlertCircle } from "lucide-react"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Activity, Plus, Syringe, Stethoscope, AlertCircle, Calendar, Pill, Beaker, DollarSign, ClipboardList, User } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -35,6 +36,7 @@ function parseDateSafely(dateStr: string | null): Date | null {
 export default function SaludPage() {
   const { fincaId } = useGlobalStore()
   const [openForm, setOpenForm] = useState(false)
+  const [selectedEvento, setSelectedEvento] = useState<any | null>(null)
   const queryClient = useQueryClient()
 
   const [form, setForm] = useState({
@@ -403,7 +405,11 @@ export default function SaludPage() {
                     const isVacuna = evento.tipoEvento?.toLowerCase().includes('vacun') || evento.tipoEvento?.toLowerCase().includes('inyecc');
 
                     return (
-                      <TableRow key={evento.uuid}>
+                      <TableRow
+                        key={evento.uuid}
+                        className="cursor-pointer hover:bg-primary/5 transition-colors"
+                        onClick={() => setSelectedEvento(evento)}
+                      >
                         <TableCell className="font-medium whitespace-nowrap">
                           {(() => {
                             const d = parseDateSafely(evento.fecha);
@@ -452,6 +458,124 @@ export default function SaludPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Sheet de Detalle de Evento */}
+      <Sheet open={!!selectedEvento} onOpenChange={(open) => !open && setSelectedEvento(null)}>
+        <SheetContent className="w-[420px] sm:w-[500px] overflow-y-auto">
+          <SheetHeader className="border-b pb-4 mb-6">
+            <div className="flex items-center gap-2.5">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                {selectedEvento?.tipoEvento?.toLowerCase().includes('vacun') || selectedEvento?.tipoEvento?.toLowerCase().includes('inyecc')
+                  ? <Syringe className="h-5 w-5 text-primary" />
+                  : <Stethoscope className="h-5 w-5 text-primary" />
+                }
+              </div>
+              <div>
+                <SheetTitle className="text-xl font-bold">Detalle del Evento</SheetTitle>
+                <SheetDescription>Información completa del evento de salud</SheetDescription>
+              </div>
+            </div>
+          </SheetHeader>
+
+          {selectedEvento && (() => {
+            const animal = (selectedEvento as any).animales
+            const fechaEvento = parseDateSafely(selectedEvento.fecha)
+            const fechaProxima = parseDateSafely(selectedEvento.fechaProximaAplicacion)
+            const tipoColor =
+              selectedEvento.tipoEvento === 'Tratamiento' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20' :
+              selectedEvento.tipoEvento === 'Control Clínico' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20' :
+              selectedEvento.tipoEvento === 'Desparasitación' ? 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20' :
+              'bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20'
+
+            return (
+              <div className="space-y-4">
+                {/* Tipo de evento */}
+                <Badge className={`text-sm px-3 py-1 border font-semibold ${tipoColor}`}>
+                  {selectedEvento.tipoEvento || 'Tratamiento'}
+                </Badge>
+
+                {/* Animal */}
+                <div className="bg-muted/30 rounded-xl border p-4 space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                    <User className="h-3.5 w-3.5" /> Animal
+                  </div>
+                  {animal ? (
+                    <div>
+                      <p className="text-2xl font-bold text-primary">{animal.codigo}</p>
+                      {animal.nombre && <p className="text-sm text-muted-foreground">{animal.nombre}</p>}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">Aplicado a varios animales del hato</p>
+                  )}
+                </div>
+
+                {/* Fechas */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-muted/30 rounded-xl border p-4">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      <Calendar className="h-3.5 w-3.5" /> Fecha Evento
+                    </div>
+                    <p className="text-base font-bold">
+                      {fechaEvento ? format(fechaEvento, "dd MMM yyyy", { locale: es }) : '-'}
+                    </p>
+                  </div>
+                  <div className={`rounded-xl border p-4 ${fechaProxima ? 'bg-amber-500/10 border-amber-500/20' : 'bg-muted/30'}`}>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      <Calendar className="h-3.5 w-3.5" /> Próxima Aplicación
+                    </div>
+                    {fechaProxima ? (
+                      <p className="text-base font-bold text-amber-600 dark:text-amber-400">
+                        {format(fechaProxima, "dd MMM yyyy", { locale: es })}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">Sin próxima fecha</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Medicamento y Dosis */}
+                <div className="bg-muted/30 rounded-xl border p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    <Pill className="h-3.5 w-3.5" /> Medicamento / Producto
+                  </div>
+                  <p className="text-lg font-bold">{selectedEvento.medicamento || '—'}</p>
+                  {selectedEvento.dosis && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-dashed border-border">
+                      <Beaker className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dosis aplicada</p>
+                        <p className="text-sm font-semibold">{selectedEvento.dosis}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Costo */}
+                {selectedEvento.costoBob != null && selectedEvento.costoBob > 0 && (
+                  <div className="bg-muted/30 rounded-xl border p-4">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      <DollarSign className="h-3.5 w-3.5" /> Costo
+                    </div>
+                    <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                      Bs {selectedEvento.costoBob.toLocaleString('es-BO')}
+                    </p>
+                  </div>
+                )}
+
+                {/* Observaciones */}
+                {selectedEvento.observacion && (
+                  <div className="bg-muted/30 rounded-xl border p-4">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                      <ClipboardList className="h-3.5 w-3.5" /> Observaciones
+                    </div>
+                    <p className="text-sm leading-relaxed">{selectedEvento.observacion}</p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
