@@ -68,6 +68,10 @@ export default function LotesPage() {
   const [isAssigning, setIsAssigning] = useState(false)
   const [removingAnimalId, setRemovingAnimalId] = useState<string | null>(null)
 
+  // Filter and search states for available animals
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("Todos")
+  const [searchQuery, setSearchQuery] = useState("")
+
   useEffect(() => {
     fetchLotes()
   }, [fincaId])
@@ -168,6 +172,8 @@ export default function LotesPage() {
     setAnimalsDialogOpen(true)
     setShowAddSection(false)
     setSelectedAnimalsToAssign([])
+    setSelectedCategoryFilter("Todos")
+    setSearchQuery("")
     fetchLoteAnimals(lote.uuid)
     fetchAvailableAnimals(lote.uuid)
   }
@@ -258,6 +264,34 @@ export default function LotesPage() {
       toast.error("Error al crear el lote")
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  // Filter calculations for available animals
+  const uniqueCategories = Array.from(
+    new Set(availableAnimals.map(a => a.categoria))
+  ).filter(Boolean) as string[]
+
+  const filteredAvailableAnimals = availableAnimals.filter((animal) => {
+    const matchesCategory = selectedCategoryFilter === "Todos" || animal.categoria === selectedCategoryFilter;
+    const matchesSearch = !searchQuery || 
+      animal.codigo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (animal.nombre && animal.nombre.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesCategory && matchesSearch;
+  })
+
+  const allFilteredSelected = filteredAvailableAnimals.length > 0 && 
+    filteredAvailableAnimals.every(a => selectedAnimalsToAssign.includes(a.uuid))
+
+  const handleToggleSelectAll = () => {
+    if (allFilteredSelected) {
+      // Remove all filtered animals from selection
+      const filteredUuids = filteredAvailableAnimals.map(a => a.uuid);
+      setSelectedAnimalsToAssign(prev => prev.filter(id => !filteredUuids.includes(id)));
+    } else {
+      // Add all filtered animals to selection
+      const filteredUuids = filteredAvailableAnimals.map(a => a.uuid);
+      setSelectedAnimalsToAssign(prev => Array.from(new Set([...prev, ...filteredUuids])));
     }
   }
 
@@ -421,7 +455,7 @@ export default function LotesPage() {
 
       {/* Dialog para Ver y Asignar Animales al Lote */}
       <Dialog open={animalsDialogOpen} onOpenChange={setAnimalsDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <div 
@@ -481,44 +515,124 @@ export default function LotesPage() {
                     No hay otros animales disponibles para asignar.
                   </p>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto p-1 border rounded bg-background">
-                    {availableAnimals.map((animal) => {
-                      const isChecked = selectedAnimalsToAssign.includes(animal.uuid);
-                      return (
-                        <div 
-                          key={animal.uuid}
-                          onClick={() => {
-                            if (isChecked) {
-                              setSelectedAnimalsToAssign(prev => prev.filter(id => id !== animal.uuid));
-                            } else {
-                              setSelectedAnimalsToAssign(prev => [...prev, animal.uuid]);
-                            }
-                          }}
-                          className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all hover:bg-muted text-xs ${
-                            isChecked ? "border-primary/50 bg-primary/5" : "border-border"
-                          }`}
-                        >
-                          <div className="text-primary">
-                            {isChecked ? (
-                              <CheckSquare className="w-4 h-4" />
-                            ) : (
-                              <Square className="w-4 h-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="truncate">
-                            <span className="font-mono font-bold block">{animal.codigo}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {animal.nombre || "Sin Nombre"} • {animal.raza}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="space-y-4">
+                    {/* Filtros y Buscador */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between border-b pb-3">
+                      {/* Búsqueda por Texto */}
+                      <div className="relative flex-1">
+                        <Input
+                          placeholder="Buscar por RP o Nombre..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="h-9 text-xs pr-8"
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground text-xs"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Botón de Seleccionar Todos */}
+                      <Button
+                        type="button"
+                        variant={allFilteredSelected ? "destructive" : "outline"}
+                        size="sm"
+                        onClick={handleToggleSelectAll}
+                        className="text-xs h-9 gap-1.5 shrink-0"
+                      >
+                        {allFilteredSelected ? (
+                          <>
+                            <Square className="w-3.5 h-3.5" />
+                            Deseleccionar Todos
+                          </>
+                        ) : (
+                          <>
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            Seleccionar Todos ({filteredAvailableAnimals.length})
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Filtros por Categoría (Chips) */}
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                        Filtrar por Categoría
+                      </Label>
+                      <div className="flex gap-1.5 flex-wrap max-h-[70px] overflow-y-auto pb-1">
+                        {["Todos", ...uniqueCategories].map((cat) => {
+                          const isActive = selectedCategoryFilter === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setSelectedCategoryFilter(cat)}
+                              className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all border ${
+                                isActive 
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm" 
+                                  : "bg-background text-muted-foreground border-border hover:bg-muted/80"
+                              }`}
+                            >
+                              {cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Grid de Animales Filtrados */}
+                    {filteredAvailableAnimals.length === 0 ? (
+                      <div className="py-8 text-center bg-background rounded border border-dashed text-xs text-muted-foreground">
+                        No se encontraron animales que coincidan con la búsqueda o filtro.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[220px] overflow-y-auto p-1 border rounded bg-background">
+                        {filteredAvailableAnimals.map((animal) => {
+                          const isChecked = selectedAnimalsToAssign.includes(animal.uuid);
+                          return (
+                            <div 
+                              key={animal.uuid}
+                              onClick={() => {
+                                if (isChecked) {
+                                  setSelectedAnimalsToAssign(prev => prev.filter(id => id !== animal.uuid));
+                                } else {
+                                  setSelectedAnimalsToAssign(prev => [...prev, animal.uuid]);
+                                }
+                              }}
+                              className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all hover:bg-muted text-xs ${
+                                isChecked ? "border-primary/50 bg-primary/5 shadow-sm" : "border-border"
+                              }`}
+                            >
+                              <div className="text-primary shrink-0">
+                                {isChecked ? (
+                                  <CheckSquare className="w-4 h-4 text-primary" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </div>
+                              <div className="truncate flex-1">
+                                <span className="font-mono font-bold block">{animal.codigo}</span>
+                                <span className="text-[10px] text-muted-foreground block truncate">
+                                  {animal.nombre || "Sin Nombre"}
+                                </span>
+                                <span className="text-[9px] font-medium text-primary bg-primary/10 px-1 py-0.2 rounded border border-primary/10 inline-block mt-0.5">
+                                  {animal.categoria}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {availableAnimals.length > 0 && (
-                  <div className="flex justify-end gap-2 pt-2">
+                  <div className="flex justify-end gap-2 pt-2 border-t">
                     <Button 
                       size="sm" 
                       variant="outline" 
