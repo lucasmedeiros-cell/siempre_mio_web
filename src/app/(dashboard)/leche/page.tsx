@@ -82,9 +82,12 @@ export default function LecheriaPage() {
       
       // KPIs Día Actual
       const regsHoy = regs.filter(r => r.fecha.startsWith(hoy))
-      const manana = regsHoy.filter(r => r.turno?.toLowerCase() === 'mañana' || r.turno?.toLowerCase() === 'manana').reduce((sum, r) => sum + (r.litros || 0), 0)
-      const tarde = regsHoy.filter(r => r.turno?.toLowerCase() === 'tarde').reduce((sum, r) => sum + (r.litros || 0), 0)
-      const totalHoy = manana + tarde
+      const mananaRaw = regsHoy.filter(r => r.turno?.toLowerCase() === 'mañana' || r.turno?.toLowerCase() === 'manana').reduce((sum, r) => sum + (r.litros || 0), 0)
+      const tardeRaw = regsHoy.filter(r => r.turno?.toLowerCase() === 'tarde').reduce((sum, r) => sum + (r.litros || 0), 0)
+      const totalHoyRaw = mananaRaw + tardeRaw
+      const manana = Math.round(mananaRaw * 10) / 10
+      const tarde = Math.round(tardeRaw * 10) / 10
+      const totalHoy = Math.round(totalHoyRaw * 10) / 10
       
       // Chart 30 días
       const diasMap: Record<string, number> = {}
@@ -104,7 +107,7 @@ export default function LecheriaPage() {
       
       const chartData = Object.entries(diasMap).map(([dateStr, litros]) => ({
         date: format(new Date(dateStr), "dd MMM", { locale: es }),
-        litros
+        litros: Math.round(litros * 10) / 10
       }))
       
       // Top vacas mes
@@ -115,7 +118,7 @@ export default function LecheriaPage() {
         if (!vacasMap[a.codigo]) {
           vacasMap[a.codigo] = { litrosMes: 0, nombre: a.nombre || 'Desconocida', rp: a.codigo }
         }
-        vacasMap[a.codigo].litrosMes += (r.litros || 0)
+        vacasMap[a.codigo].litrosMes = Math.round((vacasMap[a.codigo].litrosMes + (r.litros || 0)) * 10) / 10
       })
       
       const topVacas = Object.values(vacasMap).sort((a, b) => b.litrosMes - a.litrosMes).slice(0, 10)
@@ -252,7 +255,7 @@ export default function LecheriaPage() {
             <Droplets className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{kpis.total} L</div>
+            <div className="text-3xl font-bold">{Number.isInteger(kpis.total) ? kpis.total : kpis.total.toFixed(1)} L</div>
             <p className="text-xs text-muted-foreground">+5% vs ayer</p>
           </CardContent>
         </Card>
@@ -262,7 +265,7 @@ export default function LecheriaPage() {
             <Sun className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{kpis.manana} L</div>
+            <div className="text-3xl font-bold">{Number.isInteger(kpis.manana) ? kpis.manana : kpis.manana.toFixed(1)} L</div>
             <p className="text-xs text-muted-foreground">56% de la producción</p>
           </CardContent>
         </Card>
@@ -272,7 +275,7 @@ export default function LecheriaPage() {
             <Moon className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{kpis.tarde} L</div>
+            <div className="text-3xl font-bold">{Number.isInteger(kpis.tarde) ? kpis.tarde : kpis.tarde.toFixed(1)} L</div>
             <p className="text-xs text-muted-foreground">44% de la producción</p>
           </CardContent>
         </Card>
@@ -324,7 +327,7 @@ export default function LecheriaPage() {
                       <p className="text-sm font-medium leading-none">
                         {vaca.nombre} <span className="text-muted-foreground">({vaca.rp})</span>
                       </p>
-                      <span className="text-sm font-bold text-primary">{vaca.litrosMes} L</span>
+                      <span className="text-sm font-bold text-primary">{Number.isInteger(vaca.litrosMes) ? vaca.litrosMes : vaca.litrosMes.toFixed(1)} L</span>
                     </div>
                     <Progress value={(vaca.litrosMes / vaca.maximo) * 100} className="h-2" />
                   </div>

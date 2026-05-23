@@ -34,6 +34,24 @@ async function run() {
     const data3 = await res3.json();
     console.log(`\nLotes (${data3.length || 0}):`, data3.slice(0, 3));
 
+    const resSalud = await fetch(`${url}/rest/v1/eventos_salud?select=*`, {
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`
+      }
+    });
+    const dataSalud = await resSalud.json();
+    console.log(`\nEventos Salud (${dataSalud.length || 0}):`, dataSalud);
+
+    const resLeche = await fetch(`${url}/rest/v1/registros_leche?select=*`, {
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`
+      }
+    });
+    const dataLeche = await resLeche.json();
+    console.log(`\nRegistros Leche (${dataLeche.length || 0}):`, dataLeche);
+
   } catch(e) {
     console.error('Error fetching data:', e);
   }
