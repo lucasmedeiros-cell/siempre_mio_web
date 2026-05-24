@@ -8,7 +8,7 @@ import { format, differenceInDays, addDays, isThisMonth } from "date-fns"
 import { es } from "date-fns/locale"
 import { motion, AnimatePresence } from "framer-motion"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,7 +30,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { toast } from "sonner"
 import {
   Baby,
@@ -39,32 +46,35 @@ import {
   CalendarDays,
   TrendingUp,
   ArrowLeft,
-  Clock,
   CheckCircle2,
   AlertCircle,
   Stethoscope,
 } from "lucide-react"
 import Link from "next/link"
 
-// ─── Tipos ──────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+//
+// Valores confirmados en simulate_data.js (los que realmente están en la BD):
+//   tipo_evento: 'Servicio' | 'Parto'
+//   diagnostico: 'Preñada' | 'Normal' | null
+//   campo fecha: fecha_evento  (NO "fecha")
+//   campo notas: observacion   (NO "notas")
 
 type TipoEvento =
-  | "Servicio (Monta Natural)"
+  | "Servicio"
   | "Inseminación Artificial"
-  | "Diagnóstico Preñez"
   | "Parto"
   | "Aborto"
   | "Destete"
-  | "Celo Detectado"
+  | "Celo"
 
 const TIPOS_EVENTO: TipoEvento[] = [
-  "Servicio (Monta Natural)",
+  "Servicio",
   "Inseminación Artificial",
-  "Diagnóstico Preñez",
   "Parto",
   "Aborto",
   "Destete",
-  "Celo Detectado",
+  "Celo",
 ]
 
 type Tab = "gestaciones" | "servicios" | "partos" | "indices"
@@ -73,8 +83,9 @@ interface EventoReproductivo {
   uuid: string
   animalId: string
   tipoEvento: string
-  fecha: string
-  notas: string | null
+  fechaEvento: string          // campo real en BD: fecha_evento
+  observacion: string | null  // campo real en BD: observacion
+  diagnostico: string | null  // 'Preñada' | 'Normal' | null
   animal: { codigo: string; nombre: string; categoria: string } | null
 }
 
@@ -98,25 +109,23 @@ function diasRestantes(fechaServicio: string | null): number | null {
 
 function getBadgeColor(tipo: string) {
   switch (tipo) {
-    case "Servicio (Monta Natural)":
+    case "Servicio":
     case "Inseminación Artificial":
       return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20"
-    case "Diagnóstico Preñez":
-      return "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/20"
     case "Parto":
       return "bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20"
     case "Aborto":
       return "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20"
     case "Destete":
       return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
-    case "Celo Detectado":
+    case "Celo":
       return "bg-pink-500/10 text-pink-700 dark:text-pink-300 border-pink-500/20"
     default:
       return "bg-muted text-muted-foreground border-border"
   }
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────
+// ─── KPI Card ────────────────────────────────────────────────────────────────
 
 function KpiCard({
   label,
@@ -145,7 +154,7 @@ function KpiCard({
   )
 }
 
-// ─── Estado vacío ─────────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
 
 function EmptyState({ mensaje }: { mensaje: string }) {
   return (
@@ -155,13 +164,13 @@ function EmptyState({ mensaje }: { mensaje: string }) {
       </div>
       <p className="font-semibold text-foreground">{mensaje}</p>
       <p className="text-xs text-muted-foreground max-w-xs">
-        Usa el botón "+ Registrar Evento" para comenzar a registrar eventos reproductivos.
+        Usa el botón &quot;+ Registrar Evento&quot; para comenzar a registrar eventos reproductivos.
       </p>
     </div>
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReproduccionPage() {
   const { fincaId } = useGlobalStore()
@@ -176,7 +185,7 @@ export default function ReproduccionPage() {
     notas: "",
   })
 
-  // ── Animales (para selector) ──────────────────────────────────────────
+  // ── Animales (selector) ────────────────────────────────────────────────────
 
   const { data: animales = [] } = useQuery({
     queryKey: ["animales_repro_select", fincaId],
@@ -192,59 +201,67 @@ export default function ReproduccionPage() {
     },
   })
 
-  // ── Eventos reproductivos ─────────────────────────────────────────────
+  // ── Eventos reproductivos ──────────────────────────────────────────────────
 
   const { data: eventos = [], isLoading } = useQuery<EventoReproductivo[]>({
     queryKey: ["eventos_reproductivos", fincaId],
     queryFn: async () => {
       const supabase = createClient()
 
-      // Mapeo de animales
+      // Mapa de animales para mostrar código/nombre
       const { data: animalRows } = await supabase
         .from("animales")
         .select("uuid, codigo, nombre, categoria")
         .eq("deleted", false)
+
       const animalMap: Record<string, { codigo: string; nombre: string; categoria: string }> = {}
       ;(animalRows || []).forEach((a: any) => {
-        animalMap[a.uuid] = { codigo: a.codigo, nombre: a.nombre || "", categoria: a.categoria || "" }
+        animalMap[a.uuid] = {
+          codigo: a.codigo,
+          nombre: a.nombre || "",
+          categoria: a.categoria || "",
+        }
       })
 
+      // Fetch eventos — ordenar por fecha_evento (campo real en BD)
       const { data, error } = await (supabase.from("eventos_reproductivos") as any)
         .select("*")
         .eq("deleted", false)
-        .order("fecha", { ascending: false })
+        .order("fecha_evento", { ascending: false })
 
       if (error) {
-        // Si la tabla no existe aún, devolvemos arreglo vacío
-        console.warn("eventos_reproductivos:", error.message)
+        console.warn("eventos_reproductivos error:", error.message)
         return []
       }
 
-      return (data || []).map((e: any): EventoReproductivo => {
-        const aInfo = animalMap[e.animal_id] || null
-        return {
-          uuid: e.uuid,
-          animalId: e.animal_id,
-          tipoEvento: e.tipo_evento,
-          fecha: e.fecha,
-          notas: e.notas || null,
-          animal: aInfo,
-        }
-      })
+      return (data || []).map((e: any): EventoReproductivo => ({
+        uuid: e.uuid,
+        animalId: e.animal_id,
+        tipoEvento: e.tipo_evento,
+        // La BD almacena el campo como fecha_evento
+        fechaEvento: e.fecha_evento || "",
+        observacion: e.observacion || null,
+        diagnostico: e.diagnostico || null,
+        animal: animalMap[e.animal_id] || null,
+      }))
     },
   })
 
-  // ── Mutación registrar evento ─────────────────────────────────────────
+  // ── Mutación: registrar evento ─────────────────────────────────────────────
 
-  const addEventoMutation = useMutation({
+  const addMutation = useMutation({
     mutationFn: async (payload: typeof form) => {
       const supabase = createClient()
       const row = {
         uuid: crypto.randomUUID(),
         animal_id: payload.animalId,
         tipo_evento: payload.tipoEvento,
-        fecha: payload.fecha,
-        notas: payload.notas || null,
+        // Guardar en el campo correcto de la BD
+        fecha_evento: payload.fecha,
+        observacion: payload.notas || null,
+        diagnostico: null,
+        toro_id: null,
+        cria_id: null,
         deleted: false,
         synced: true,
         updated_at: new Date().toISOString(),
@@ -258,11 +275,16 @@ export default function ReproduccionPage() {
       queryClient.invalidateQueries({ queryKey: ["dashboard_overview"] })
       toast.success("Evento reproductivo registrado")
       setOpenForm(false)
-      setForm({ animalId: "", tipoEvento: "", fecha: new Date().toISOString().split("T")[0], notas: "" })
+      setForm({
+        animalId: "",
+        tipoEvento: "",
+        fecha: new Date().toISOString().split("T")[0],
+        notas: "",
+      })
     },
     onError: (err: any) => {
       console.error(err)
-      toast.error("Error al registrar el evento. Verifica que la tabla existe en Supabase.")
+      toast.error("Error al registrar el evento")
     },
   })
 
@@ -272,52 +294,57 @@ export default function ReproduccionPage() {
       toast.error("Selecciona un animal, tipo de evento y fecha")
       return
     }
-    addEventoMutation.mutate(form)
+    addMutation.mutate(form)
   }
 
-  // ── Cálculos de KPIs ─────────────────────────────────────────────────
+  // ── KPIs ───────────────────────────────────────────────────────────────────
 
-  const serviciosEsteMes = eventos.filter((e) => {
-    const d = parseFecha(e.fecha)
+  // Servicios este mes
+  const serviciosEsteMes = eventos.filter((e: EventoReproductivo) => {
+    const d = parseFecha(e.fechaEvento)
     return (
       d &&
       isThisMonth(d) &&
-      (e.tipoEvento === "Servicio (Monta Natural)" || e.tipoEvento === "Inseminación Artificial")
+      (e.tipoEvento === "Servicio" || e.tipoEvento === "Inseminación Artificial")
     )
   })
 
-  const partosEsteMes = eventos.filter((e) => {
-    const d = parseFecha(e.fecha)
+  // Partos este mes
+  const partosEsteMes = eventos.filter((e: EventoReproductivo) => {
+    const d = parseFecha(e.fechaEvento)
     return d && isThisMonth(d) && e.tipoEvento === "Parto"
   })
 
-  // Gestaciones activas: animales con Diagnóstico Preñez y sin Parto posterior
-  const diagnosticos = eventos.filter((e) => e.tipoEvento === "Diagnóstico Preñez")
-  const partosIds = new Set(
-    eventos.filter((e) => e.tipoEvento === "Parto").map((e) => e.animalId)
+  // Gestaciones activas: Servicios con diagnostico="Preñada" y sin Parto posterior
+  const serviciosPreniados = eventos.filter(
+    (e: EventoReproductivo) =>
+      (e.tipoEvento === "Servicio" || e.tipoEvento === "Inseminación Artificial") &&
+      e.diagnostico === "Preñada"
   )
-  // Para cada animal diagnosticado, verificar si ya tuvo parto DESPUÉS del diagnóstico
-  const gestacionesActivas = diagnosticos.filter((diag) => {
+
+  const gestacionesActivas = serviciosPreniados.filter((serv: EventoReproductivo) => {
     const partosDelAnimal = eventos.filter(
-      (e) => e.animalId === diag.animalId && e.tipoEvento === "Parto"
+      (e: EventoReproductivo) =>
+        e.animalId === serv.animalId && e.tipoEvento === "Parto"
     )
     if (partosDelAnimal.length === 0) return true
-    const fechaDiag = parseFecha(diag.fecha)
-    return partosDelAnimal.every((p) => {
-      const fp = parseFecha(p.fecha)
-      return fp && fechaDiag && fp < fechaDiag
+    const fechaServ = parseFecha(serv.fechaEvento)
+    return partosDelAnimal.every((p: EventoReproductivo) => {
+      const fp = parseFecha(p.fechaEvento)
+      return fp && fechaServ && fp < fechaServ
     })
   })
 
-  // Tasa de concepción: (Diagnósticos Preñez / Servicios totales) * 100
+  // Tasa de concepción
   const totalServicios = eventos.filter(
-    (e) => e.tipoEvento === "Servicio (Monta Natural)" || e.tipoEvento === "Inseminación Artificial"
+    (e: EventoReproductivo) =>
+      e.tipoEvento === "Servicio" || e.tipoEvento === "Inseminación Artificial"
   ).length
-  const totalDiagnosticos = diagnosticos.length
+  const totalPreniadas = serviciosPreniados.length
   const tasaConcepcion =
-    totalServicios > 0 ? Math.round((totalDiagnosticos / totalServicios) * 100) : 0
+    totalServicios > 0 ? Math.round((totalPreniadas / totalServicios) * 100) : 0
 
-  // ── Contenido por tab ─────────────────────────────────────────────────
+  // ── Contenido por tab ──────────────────────────────────────────────────────
 
   const tabContent = () => {
     if (isLoading) {
@@ -328,6 +355,7 @@ export default function ReproduccionPage() {
       )
     }
 
+    // ── Gestaciones ──────────────────────────────────────────────────────────
     if (tab === "gestaciones") {
       return gestacionesActivas.length === 0 ? (
         <EmptyState mensaje="Sin gestaciones activas" />
@@ -337,17 +365,17 @@ export default function ReproduccionPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Animal</TableHead>
-                <TableHead>Fecha Diagnóstico</TableHead>
+                <TableHead>Fecha Servicio</TableHead>
                 <TableHead>Parto Estimado</TableHead>
                 <TableHead>Días Restantes</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {gestacionesActivas.map((g) => {
-                const fDiag = parseFecha(g.fecha)
-                const fParto = fDiag ? addDays(fDiag, DIAS_GESTACION) : null
-                const dias = diasRestantes(g.fecha)
+              {gestacionesActivas.map((g: EventoReproductivo) => {
+                const fServ = parseFecha(g.fechaEvento)
+                const fParto = fServ ? addDays(fServ, DIAS_GESTACION) : null
+                const dias = diasRestantes(g.fechaEvento)
                 return (
                   <TableRow key={g.uuid}>
                     <TableCell>
@@ -357,16 +385,14 @@ export default function ReproduccionPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {fDiag ? format(fDiag, "dd MMM yyyy", { locale: es }) : "—"}
+                      {fServ ? format(fServ, "dd MMM yyyy", { locale: es }) : "—"}
                     </TableCell>
                     <TableCell>
                       {fParto ? (
                         <span className="font-medium text-primary">
                           {format(fParto, "dd MMM yyyy", { locale: es })}
                         </span>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </TableCell>
                     <TableCell>
                       {dias !== null ? (
@@ -381,9 +407,7 @@ export default function ReproduccionPage() {
                         >
                           {dias > 0 ? `${dias} días` : dias === 0 ? "¡Hoy!" : "Vencido"}
                         </span>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </TableCell>
                     <TableCell>
                       {dias !== null && dias <= 14 ? (
@@ -405,12 +429,13 @@ export default function ReproduccionPage() {
       )
     }
 
+    // ── Servicios ────────────────────────────────────────────────────────────
     if (tab === "servicios") {
       const servicios = eventos.filter(
-        (e) =>
-          e.tipoEvento === "Servicio (Monta Natural)" ||
+        (e: EventoReproductivo) =>
+          e.tipoEvento === "Servicio" ||
           e.tipoEvento === "Inseminación Artificial" ||
-          e.tipoEvento === "Celo Detectado"
+          e.tipoEvento === "Celo"
       )
       return servicios.length === 0 ? (
         <EmptyState mensaje="Sin servicios registrados" />
@@ -422,12 +447,13 @@ export default function ReproduccionPage() {
                 <TableHead>Animal</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Fecha</TableHead>
-                <TableHead>Notas</TableHead>
+                <TableHead>Diagnóstico</TableHead>
+                <TableHead>Observaciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {servicios.map((s) => {
-                const fd = parseFecha(s.fecha)
+              {servicios.map((s: EventoReproductivo) => {
+                const fd = parseFecha(s.fechaEvento)
                 return (
                   <TableRow key={s.uuid}>
                     <TableCell>
@@ -445,8 +471,21 @@ export default function ReproduccionPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>{fd ? format(fd, "dd MMM yyyy", { locale: es }) : "—"}</TableCell>
+                    <TableCell>
+                      {s.diagnostico ? (
+                        <Badge
+                          className={`text-[10px] ${
+                            s.diagnostico === "Preñada"
+                              ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/20 border"
+                              : "bg-muted text-muted-foreground border"
+                          }`}
+                        >
+                          {s.diagnostico}
+                        </Badge>
+                      ) : "—"}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                      {s.notas || "—"}
+                      {s.observacion || "—"}
                     </TableCell>
                   </TableRow>
                 )
@@ -457,8 +496,11 @@ export default function ReproduccionPage() {
       )
     }
 
+    // ── Partos ───────────────────────────────────────────────────────────────
     if (tab === "partos") {
-      const partos = eventos.filter((e) => e.tipoEvento === "Parto" || e.tipoEvento === "Aborto")
+      const partos = eventos.filter(
+        (e: EventoReproductivo) => e.tipoEvento === "Parto" || e.tipoEvento === "Aborto"
+      )
       return partos.length === 0 ? (
         <EmptyState mensaje="Sin partos registrados" />
       ) : (
@@ -469,12 +511,13 @@ export default function ReproduccionPage() {
                 <TableHead>Animal</TableHead>
                 <TableHead>Resultado</TableHead>
                 <TableHead>Fecha</TableHead>
-                <TableHead>Notas</TableHead>
+                <TableHead>Diagnóstico</TableHead>
+                <TableHead>Observaciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {partos.map((p) => {
-                const fd = parseFecha(p.fecha)
+              {partos.map((p: EventoReproductivo) => {
+                const fd = parseFecha(p.fechaEvento)
                 const isParto = p.tipoEvento === "Parto"
                 return (
                   <TableRow key={p.uuid}>
@@ -498,8 +541,15 @@ export default function ReproduccionPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>{fd ? format(fd, "dd MMM yyyy", { locale: es }) : "—"}</TableCell>
+                    <TableCell>
+                      {p.diagnostico ? (
+                        <Badge className="text-[10px] bg-muted text-muted-foreground border">
+                          {p.diagnostico}
+                        </Badge>
+                      ) : "—"}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                      {p.notas || "—"}
+                      {p.observacion || "—"}
                     </TableCell>
                   </TableRow>
                 )
@@ -510,9 +560,9 @@ export default function ReproduccionPage() {
       )
     }
 
-    // Índices reproductivos
-    const totalPartos = eventos.filter((e) => e.tipoEvento === "Parto").length
-    const totalAbortos = eventos.filter((e) => e.tipoEvento === "Aborto").length
+    // ── Índices ──────────────────────────────────────────────────────────────
+    const totalPartos = eventos.filter((e: EventoReproductivo) => e.tipoEvento === "Parto").length
+    const totalAbortos = eventos.filter((e: EventoReproductivo) => e.tipoEvento === "Aborto").length
     const tasaAborto =
       totalPartos + totalAbortos > 0
         ? Math.round((totalAbortos / (totalPartos + totalAbortos)) * 100)
@@ -526,17 +576,19 @@ export default function ReproduccionPage() {
             value: totalServicios,
             icon: <Heart className="w-5 h-5 text-blue-500" />,
             sub: "Montas e inseminaciones registradas",
+            vc: "",
           },
           {
-            label: "Total Diagnósticos",
-            value: totalDiagnosticos,
+            label: "Confirmadas Preñadas",
+            value: totalPreniadas,
             icon: <Stethoscope className="w-5 h-5 text-violet-500" />,
-            sub: "Preñeces confirmadas",
+            sub: "Preñeces confirmadas con diagnóstico",
+            vc: "",
           },
           {
             label: "Tasa de Concepción",
             value: `${tasaConcepcion}%`,
-            valueClass: tasaConcepcion >= 60 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400",
+            vc: tasaConcepcion >= 60 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400",
             icon: <TrendingUp className="w-5 h-5 text-primary" />,
             sub: tasaConcepcion >= 60 ? "Buena" : tasaConcepcion >= 40 ? "Regular" : "Baja",
           },
@@ -545,17 +597,19 @@ export default function ReproduccionPage() {
             value: totalPartos,
             icon: <Baby className="w-5 h-5 text-green-500" />,
             sub: "Crías nacidas registradas",
+            vc: "",
           },
           {
             label: "Total Abortos",
             value: totalAbortos,
             icon: <AlertCircle className="w-5 h-5 text-red-500" />,
             sub: "Pérdidas gestacionales",
+            vc: "",
           },
           {
             label: "Tasa de Aborto",
             value: `${tasaAborto}%`,
-            valueClass: tasaAborto > 10 ? "text-red-600 dark:text-red-400" : "text-foreground",
+            vc: tasaAborto > 10 ? "text-red-600 dark:text-red-400" : "text-foreground",
             icon: <TrendingUp className="w-5 h-5 text-amber-500" />,
             sub: tasaAborto <= 5 ? "Normal" : "Alta",
           },
@@ -568,9 +622,7 @@ export default function ReproduccionPage() {
               {idx.icon}
             </CardHeader>
             <CardContent className="px-5 pb-4">
-              <div className={`text-3xl font-extrabold ${(idx as any).valueClass || ""}`}>
-                {idx.value}
-              </div>
+              <div className={`text-3xl font-extrabold ${idx.vc}`}>{idx.value}</div>
               <p className="text-[11px] text-muted-foreground mt-0.5">{idx.sub}</p>
             </CardContent>
           </Card>
@@ -579,7 +631,7 @@ export default function ReproduccionPage() {
     )
   }
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   const TABS: { id: Tab; label: string; count?: number }[] = [
     { id: "gestaciones", label: "Gestaciones activas", count: gestacionesActivas.length },
@@ -689,15 +741,11 @@ export default function ReproduccionPage() {
               </div>
 
               <DialogFooter className="gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpenForm(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => setOpenForm(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={addEventoMutation.isPending}>
-                  {addEventoMutation.isPending ? "Guardando..." : "Registrar evento"}
+                <Button type="submit" disabled={addMutation.isPending}>
+                  {addMutation.isPending ? "Guardando..." : "Registrar evento"}
                 </Button>
               </DialogFooter>
             </form>
@@ -713,10 +761,12 @@ export default function ReproduccionPage() {
           sublabel={
             gestacionesActivas.length === 0
               ? "Sin partos inmediatos"
-              : `${gestacionesActivas.filter((g) => {
-                  const d = diasRestantes(g.fecha)
-                  return d !== null && d <= 30
-                }).length} próximas en 30 días`
+              : `${
+                  gestacionesActivas.filter((g: EventoReproductivo) => {
+                    const d = diasRestantes(g.fechaEvento)
+                    return d !== null && d <= 30
+                  }).length
+                } próximas en 30 días`
           }
           icon={<Heart className="w-4 h-4" />}
         />
@@ -748,7 +798,6 @@ export default function ReproduccionPage() {
       {/* Tabs + Contenido */}
       <Card>
         <CardHeader className="pb-0 px-0 pt-0">
-          {/* Tab bar */}
           <div className="flex gap-1 px-4 pt-4 border-b border-border/60 overflow-x-auto">
             {TABS.map((t) => (
               <button
