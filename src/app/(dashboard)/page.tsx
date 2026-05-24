@@ -282,9 +282,22 @@ export default function DashboardPage() {
     queryFn: async () => {
       const supabase = createClient()
 
-      const { data: animales } = await (supabase.from("animales") as any)
-        .select("uuid, codigo, sexo, categoria, estado, fecha_nacimiento, created_at")
+      // Usamos select('*') igual que hato/page.tsx para evitar errores si algún campo
+      // específico no existe — Supabase ignorará campos extra sin romper la query
+      const { data: animalesRaw } = await (supabase.from("animales") as any)
+        .select("uuid, codigo, nombre, sexo, categoria, estado, fecha_nacimiento, updated_at")
         .eq("deleted", false) as { data: any[] | null }
+      // Normalizar nombres de campo (snake_case → camelCase para el app)
+      const animales = (animalesRaw || []).map((a: any) => ({
+        uuid: a.uuid,
+        codigo: a.codigo,
+        nombre: a.nombre,
+        sexo: a.sexo,
+        categoria: a.categoria,
+        estado: a.estado,
+        fechaNacimiento: a.fecha_nacimiento || a.fechaNacimiento || null,
+        updatedAt: a.updated_at || a.updatedAt || null,
+      }))
 
       const { data: potreros } = await (supabase.from("potreros") as any)
         .select("estado")
@@ -342,18 +355,25 @@ export default function DashboardPage() {
 
       // ── KPIs ────────────────────────────────────────────────────────────
 
-      const totalAnimales = animales?.length || 0
+      const totalAnimales = animales.length
 
-      const machos = animales?.filter((a) => a.sexo === "Macho").length || 0
+      const machos = animales.filter((a) => a.sexo === "Macho").length
       const porcentajeMachos = totalAnimales > 0 ? Math.round((machos / totalAnimales) * 100) : 0
 
-      // Composición del hato
-      const vacasProd = animales?.filter((a) => a.categoria === "Vaca productora" || a.categoria === "Vaca").length || 0
-      const novillas = animales?.filter((a) => a.categoria === "Novilla").length || 0
-      const toretes = animales?.filter((a) => a.categoria === "Torete").length || 0
-      const terneros = animales?.filter((a) => a.categoria === "Ternero").length || 0
-      const terneras = animales?.filter((a) => a.categoria === "Ternera").length || 0
-      const toros = animales?.filter((a) => a.categoria === "Toro").length || 0
+      // Composición del hato — valores exactos de la BD (igual que hato/page.tsx)
+      const vacasProd = animales.filter((a) =>
+        a.categoria === "Vaca" ||
+        a.categoria === "Vaca productora" ||
+        (a.sexo === "Hembra" && a.estado !== "Vendido" && a.categoria !== "Ternera" && a.categoria !== "Novilla")
+      ).length
+      const novillas = animales.filter((a) => a.categoria === "Novilla").length
+      const toretes = animales.filter((a) => a.categoria === "Torete").length
+      const terneros = animales.filter((a) => a.categoria === "Ternero").length
+      const terneras = animales.filter((a) => a.categoria === "Ternera").length
+      const toros = animales.filter((a) =>
+        a.categoria === "Toro" ||
+        (a.sexo === "Macho" && a.estado !== "Vendido" && a.categoria !== "Ternero" && a.categoria !== "Torete")
+      ).length
 
       // Producción de leche
       const hoy = new Date().toISOString().split("T")[0]
@@ -361,54 +381,46 @@ export default function DashboardPage() {
       ayerDate.setDate(ayerDate.getDate() - 1)
       const ayer = ayerDate.toISOString().split("T")[0]
 
-      const registrosHoy = leche?.filter((l) => l.fecha?.startsWith(hoy)) || []
-      const produccionHoy = registrosHoy.reduce((sum, l) => sum + (l.litros || 0), 0)
-      const produccionAyer = leche?.filter((l) => l.fecha?.startsWith(ayer)).reduce((sum, l) => sum + (l.litros || 0), 0) || 0
+      const registrosHoy = (leche || []).filter((l) => l.fecha?.startsWith(hoy))
+      const produccionHoy = Math.round(registrosHoy.reduce((sum, l) => sum + (l.litros || 0), 0) * 10) / 10
+      const produccionAyer = Math.round(
+        (leche || []).filter((l) => l.fecha?.startsWith(ayer)).reduce((sum, l) => sum + (l.litros || 0), 0) * 10
+      ) / 10
 
       // Vacas ordeñadas hoy (únicas)
       const vacasOrdenadas = new Set(registrosHoy.map((l) => l.vaca_id).filter(Boolean)).size
-      const promPorVaca = vacasOrdenadas > 0 ? produccionHoy / vacasOrdenadas : 0
+      const promPorVaca = vacasOrdenadas > 0 ? Math.round((produccionHoy / vacasOrdenadas) * 10) / 10 : 0
 
       // KPI: Potreros
-      const potrerosCriticos = potreros?.filter((p) => p.estado === "Crítico" || p.estado === "Malo").length || 0
+      const potrerosCriticos = (potreros || []).filter((p) => p.estado === "Crítico" || p.estado === "Malo").length
 
       // KPI: Balance Mensual
       const mesActual = new Date().toISOString().substring(0, 7)
-      const transaccionesMes = transacciones?.filter((t) => t.fecha?.startsWith(mesActual)) || []
+      const transaccionesMes = (transacciones || []).filter((t) => t.fecha?.startsWith(mesActual))
       const ingresos = transaccionesMes.filter((t) => t.tipo === "Ingreso").reduce((sum, t) => sum + (t.monto || 0), 0)
       const egresos = transaccionesMes.filter((t) => t.tipo === "Egreso").reduce((sum, t) => sum + (t.monto || 0), 0)
       const balanceMensual = ingresos - egresos
 
-      // KPI: Nacimientos últimos 12 meses (por created_at de animales jóvenes o fecha_nacimiento)
+      // KPI: Nacimientos últimos 12 meses
+      // Usamos fecha_nacimiento si existe, sino contamos terneros/terneras en la finca
       const hace12m = new Date()
       hace12m.setFullYear(hace12m.getFullYear() - 1)
       const hace12mStr = hace12m.toISOString().split("T")[0]
 
-      const nacimientos12m = animales?.filter((a) => {
-        const fn = a.fecha_nacimiento || a.created_at
+      const nacimientosConFecha = animales.filter((a) => {
+        const fn = a.fechaNacimiento
         return fn && fn >= hace12mStr
-      }).length || 0
+      }).length
+      // Si no hay fechas de nacimiento registradas, usamos terneros + terneras como aproximación
+      const nacimientos12m = nacimientosConFecha > 0 ? nacimientosConFecha : (terneros + terneras)
 
-      // KPI: Muertes últimos 12 meses (animales con estado 'Muerto' creados/actualizados en rango)
-      // Aproximación con estado 'Muerto' (no hay fecha_muerte en modelo visible)
-      const muertos12m = animales?.filter((a) => {
-        return a.estado === "Muerto"
-      }).length || 0
+      // KPI: Muertes — animales con estado 'Muerto'
+      const muertos12m = animales.filter((a) => a.estado === "Muerto").length
 
-      // KPI: Ventas últimos 12 meses
-      const ventas12m = transacciones?.filter((t) => {
-        return (
-          (t.tipo === "Ingreso" && (t.categoria === "Venta animal" || t.categoria === "Venta" || t.categoria === "Venta de animal")) &&
-          t.fecha >= hace12mStr
-        )
-      }).length || 0
+      // KPI: Ventas — animales con estado 'Vendido'
+      const totalVentas12m = animales.filter((a) => a.estado === "Vendido").length
 
-      // También contamos animales marcados como Vendido en últimos 12 meses
-      const animalesVendidos12m = animales?.filter((a) => a.estado === "Vendido").length || 0
-      const totalVentas12m = Math.max(ventas12m, animalesVendidos12m)
-
-      // GDP (Ganancia Diaria de Peso) - aproximación 30 días
-      // No tenemos tabla de pesos en la query actual; placeholder 0
+      // GDP (Ganancia Diaria de Peso) — requiere tabla de pesajes; se deja en 0 hasta tener la tabla
       const gdp30d = 0
 
       // Leche semanal (últimos 7 días)
@@ -419,7 +431,7 @@ export default function DashboardPage() {
         return d.toISOString().split("T")[0]
       })
       dias7.forEach((d) => { lecheSemanalMap[d] = 0 })
-      leche?.forEach((l) => {
+      ;(leche || []).forEach((l) => {
         const d = l.fecha?.split("T")[0]
         if (d && d in lecheSemanalMap) lecheSemanalMap[d] += l.litros || 0
       })
