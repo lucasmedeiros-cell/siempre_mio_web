@@ -93,6 +93,7 @@ export function AppSidebar() {
 
   const handleLogout = async () => {
     try {
+      sessionStorage.clear()
       const { error } = await supabase.auth.signOut()
       if (error) throw error
       toast.success("Sesión cerrada correctamente")

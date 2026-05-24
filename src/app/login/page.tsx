@@ -37,6 +37,7 @@ export default function LoginPage() {
         }
 
         toast.success("Bienvenido a Siempre Mío")
+        sessionStorage.setItem("sessionActive", "true")
         router.push("/")
         router.refresh()
       } else {
