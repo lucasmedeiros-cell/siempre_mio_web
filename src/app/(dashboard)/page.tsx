@@ -1,15 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, Legend
 } from "recharts"
-import { Beef, Milk, Tractor, Wallet, Activity, Syringe, Clock } from "lucide-react"
+import {
+  Beef, Milk, Tractor, Wallet, Activity, Syringe, Clock,
+  Settings2, TrendingUp, Baby, Skull, ShoppingCart, Droplets, Eye, EyeOff, X
+} from "lucide-react"
 import { useGlobalStore } from "@/store/global-store"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -22,178 +25,445 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-// Animación simple para los números
-const AnimatedNumber = ({ value, prefix = "", suffix = "" }: { value: number, prefix?: string, suffix?: string }) => {
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
+type KpiId =
+  | "animales"
+  | "gdp"
+  | "lecheHoy"
+  | "promPorVaca"
+  | "nacimientos"
+  | "muertes"
+  | "ventas"
+
+interface KpiConfig {
+  id: KpiId
+  label: string
+  sublabel: string
+  icon: React.ReactNode
+  color: string
+}
+
+const ALL_KPIS: KpiConfig[] = [
+  {
+    id: "animales",
+    label: "ANIMALES TOTALES",
+    sublabel: "Total en finca",
+    icon: <Beef className="h-4 w-4" />,
+    color: "text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    id: "gdp",
+    label: "GANANCIA PROM. (30D)",
+    sublabel: "Promedio últimos 30 días",
+    icon: <TrendingUp className="h-4 w-4" />,
+    color: "text-violet-600 dark:text-violet-400",
+  },
+  {
+    id: "lecheHoy",
+    label: "LECHE HOY (TOTAL)",
+    sublabel: "0 vacas ordeñadas",
+    icon: <Droplets className="h-4 w-4" />,
+    color: "text-blue-600 dark:text-blue-400",
+  },
+  {
+    id: "promPorVaca",
+    label: "PROMEDIO POR VACA",
+    sublabel: "Por animal productor hoy",
+    icon: <Milk className="h-4 w-4" />,
+    color: "text-cyan-600 dark:text-cyan-400",
+  },
+  {
+    id: "nacimientos",
+    label: "NACIMIENTOS (12M)",
+    sublabel: "Crías nacidas últimos 12 meses",
+    icon: <Baby className="h-4 w-4" />,
+    color: "text-green-600 dark:text-green-400",
+  },
+  {
+    id: "muertes",
+    label: "MUERTES (12M)",
+    sublabel: "Animales fallecidos últimos 12 meses",
+    icon: <Skull className="h-4 w-4" />,
+    color: "text-red-600 dark:text-red-400",
+  },
+  {
+    id: "ventas",
+    label: "VENTAS (12M)",
+    sublabel: "Animales vendidos últimos 12 meses",
+    icon: <ShoppingCart className="h-4 w-4" />,
+    color: "text-amber-600 dark:text-amber-400",
+  },
+]
+
+const STORAGE_KEY = "dashboard_kpis_visible"
+
+const DEFAULT_VISIBLE: Record<KpiId, boolean> = {
+  animales: true,
+  gdp: true,
+  lecheHoy: true,
+  promPorVaca: true,
+  nacimientos: true,
+  muertes: true,
+  ventas: true,
+}
+
+// ─── AnimatedNumber ──────────────────────────────────────────────────────────
+
+const AnimatedNumber = ({
+  value,
+  prefix = "",
+  suffix = "",
+  decimals = 0,
+}: {
+  value: number
+  prefix?: string
+  suffix?: string
+  decimals?: number
+}) => (
+  <motion.span
+    key={value}
+    initial={{ opacity: 0, y: -8 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.4, type: "spring" }}
+  >
+    {prefix}
+    {value.toLocaleString("es-BO", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}
+    {suffix}
+  </motion.span>
+)
+
+// ─── KPI Card ────────────────────────────────────────────────────────────────
+
+function KpiCard({
+  config,
+  value,
+  sublabel,
+  suffix = "",
+  prefix = "",
+  decimals = 0,
+}: {
+  config: KpiConfig
+  value: number
+  sublabel?: string
+  suffix?: string
+  prefix?: string
+  decimals?: number
+}) {
   return (
-    <motion.span
-      key={value}
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, type: "spring" }}
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.88 }}
+      transition={{ duration: 0.25 }}
     >
-      {prefix}{value.toLocaleString('es-BO')}{suffix}
-    </motion.span>
+      <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-1 pt-3 px-4">
+          <p className={`text-[10px] font-bold tracking-wider uppercase ${config.color} opacity-80`}>
+            {config.label}
+          </p>
+          <span className={`${config.color} opacity-70`}>{config.icon}</span>
+        </CardHeader>
+        <CardContent className="px-4 pb-3">
+          <div className={`text-2xl font-extrabold tracking-tight ${config.color}`}>
+            <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+            {sublabel ?? config.sublabel}
+          </p>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }
+
+// ─── Panel de Personalización ────────────────────────────────────────────────
+
+function PersonalizarPanel({
+  visible,
+  onChange,
+  onClose,
+}: {
+  visible: Record<KpiId, boolean>
+  onChange: (id: KpiId, val: boolean) => void
+  onClose: () => void
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.97 }}
+      transition={{ duration: 0.18 }}
+      className="absolute right-0 top-10 z-50 w-72 rounded-xl border bg-card shadow-xl p-4"
+    >
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-bold text-foreground">Personalizar KPIs</p>
+        <button
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground transition-colors rounded-md p-0.5"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Activa o desactiva las métricas que quieres ver en el panel.
+      </p>
+      <div className="space-y-1.5">
+        {ALL_KPIS.map((kpi) => (
+          <button
+            key={kpi.id}
+            onClick={() => onChange(kpi.id, !visible[kpi.id])}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all text-left
+              ${visible[kpi.id]
+                ? "border-primary/30 bg-primary/5"
+                : "border-border bg-muted/30 opacity-60"
+              }`}
+          >
+            <span className={`${kpi.color} shrink-0`}>{kpi.icon}</span>
+            <span className="flex-1 text-[11px] font-semibold text-foreground leading-tight">
+              {kpi.label}
+            </span>
+            {visible[kpi.id] ? (
+              <Eye className="w-3.5 h-3.5 text-primary shrink-0" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            )}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => {
+          ALL_KPIS.forEach((k) => onChange(k.id, true))
+        }}
+        className="mt-3 w-full text-[10px] font-semibold text-primary hover:underline"
+      >
+        Mostrar todas
+      </button>
+    </motion.div>
+  )
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { fincaId } = useGlobalStore()
   const [openAllActivities, setOpenAllActivities] = useState(false)
   const [filterType, setFilterType] = useState("todos")
+  const [showPersonalizar, setShowPersonalizar] = useState(false)
+
+  // Persistencia de KPIs visibles en localStorage
+  const [kpisVisible, setKpisVisible] = useState<Record<KpiId, boolean>>(DEFAULT_VISIBLE)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<KpiId, boolean>
+        setKpisVisible((prev) => ({ ...prev, ...parsed }))
+      }
+    } catch (_) { /* noop */ }
+  }, [])
+
+  const toggleKpi = (id: KpiId, val: boolean) => {
+    setKpisVisible((prev) => {
+      const next = { ...prev, [id]: val }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch (_) { /* noop */ }
+      return next
+    })
+  }
 
   // 1. DATOS REALES DESDE SUPABASE
   const { data: dashboardData } = useQuery({
-    queryKey: ['dashboard_overview', fincaId],
+    queryKey: ["dashboard_overview", fincaId],
     queryFn: async () => {
       const supabase = createClient()
 
-      // Fetch de las principales tablas (obtenemos uuid y codigo para el mapa de relaciones)
-      const { data: animales } = await (supabase.from('animales') as any).select('uuid, codigo, sexo, categoria, estado').eq('deleted', false) as { data: any[] | null }
-      const { data: potreros } = await (supabase.from('potreros') as any).select('estado').eq('deleted', false) as { data: any[] | null }
-      const { data: leche } = await (supabase.from('registros_leche') as any).select('litros, fecha').eq('deleted', false) as { data: any[] | null }
-      const { data: transacciones } = await (supabase.from('transacciones') as any).select('tipo, monto, fecha').eq('deleted', false) as { data: any[] | null }
-      const { data: actividades } = await (supabase.from('actividades_log') as any).select('uuid, descripcion, fecha').eq('deleted', false).order('fecha', { ascending: false }).limit(5) as { data: any[] | null }
-      const { data: alertas } = await (supabase.from('alertas') as any).select('uuid, titulo, estado, prioridad').eq('deleted', false).eq('estado', 'Pendiente').limit(3) as { data: any[] | null }
+      const { data: animales } = await (supabase.from("animales") as any)
+        .select("uuid, codigo, sexo, categoria, estado, fecha_nacimiento, created_at")
+        .eq("deleted", false) as { data: any[] | null }
 
-      // Mapa de animal uuid a codigo
+      const { data: potreros } = await (supabase.from("potreros") as any)
+        .select("estado")
+        .eq("deleted", false) as { data: any[] | null }
+
+      const { data: leche } = await (supabase.from("registros_leche") as any)
+        .select("litros, fecha, vaca_id")
+        .eq("deleted", false) as { data: any[] | null }
+
+      const { data: transacciones } = await (supabase.from("transacciones") as any)
+        .select("tipo, monto, fecha, categoria")
+        .eq("deleted", false) as { data: any[] | null }
+
+      const { data: actividades } = await (supabase.from("actividades_log") as any)
+        .select("uuid, descripcion, fecha")
+        .eq("deleted", false)
+        .order("fecha", { ascending: false })
+        .limit(5) as { data: any[] | null }
+
+      const { data: alertas } = await (supabase.from("alertas") as any)
+        .select("uuid, titulo, estado, prioridad")
+        .eq("deleted", false)
+        .eq("estado", "Pendiente")
+        .limit(3) as { data: any[] | null }
+
+      // Actividades recientes agregadas
       const animalMap: Record<string, string> = {}
       ;(animales || []).forEach((a: any) => {
-        if (a.uuid) {
-          animalMap[a.uuid] = a.codigo || ''
-        }
+        if (a.uuid) animalMap[a.uuid] = a.codigo || ""
       })
 
-      // Carga adicional de actualizaciones en tiempo real para el agregador de actividad reciente (límites aumentados a 20 para el Ver Todo)
-      const { data: recentAnimals } = await (supabase.from('animales') as any)
-        .select('uuid, codigo, nombre, updated_at')
-        .eq('deleted', false)
-        .order('updated_at', { ascending: false })
+      const { data: recentAnimals } = await (supabase.from("animales") as any)
+        .select("uuid, codigo, nombre, updated_at")
+        .eq("deleted", false)
+        .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 
-      const { data: recentHealth } = await (supabase.from('eventos_salud') as any)
-        .select('uuid, animal_id, tipo_evento, medicamento, updated_at')
-        .eq('deleted', false)
-        .order('updated_at', { ascending: false })
+      const { data: recentHealth } = await (supabase.from("eventos_salud") as any)
+        .select("uuid, animal_id, tipo_evento, medicamento, updated_at")
+        .eq("deleted", false)
+        .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 
-      const { data: recentLeche } = await (supabase.from('registros_leche') as any)
-        .select('uuid, vaca_id, litros, fecha, updated_at')
-        .eq('deleted', false)
-        .order('updated_at', { ascending: false })
+      const { data: recentLeche } = await (supabase.from("registros_leche") as any)
+        .select("uuid, vaca_id, litros, fecha, updated_at")
+        .eq("deleted", false)
+        .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 
-      const { data: recentTrans } = await (supabase.from('transacciones') as any)
-        .select('uuid, tipo, categoria, monto, updated_at')
-        .eq('deleted', false)
-        .order('updated_at', { ascending: false })
+      const { data: recentTrans } = await (supabase.from("transacciones") as any)
+        .select("uuid, tipo, categoria, monto, updated_at")
+        .eq("deleted", false)
+        .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 
-      // KPI: Total Hato
+      // ── KPIs ────────────────────────────────────────────────────────────
+
       const totalAnimales = animales?.length || 0
-      const machos = animales?.filter(a => a.sexo === 'Macho').length || 0
+
+      const machos = animales?.filter((a) => a.sexo === "Macho").length || 0
       const porcentajeMachos = totalAnimales > 0 ? Math.round((machos / totalAnimales) * 100) : 0
 
-      // Composición Hato
-      const vacas = animales?.filter(a => a.categoria === 'Vaca' || (a.sexo === 'Hembra' && a.estado !== 'Vendido' && a.categoria !== 'Ternera')).length || 0
-      const toros = animales?.filter(a => a.categoria === 'Toro' || (a.sexo === 'Macho' && a.estado !== 'Vendido' && a.categoria !== 'Ternero')).length || 0
-      const terneros = animales?.filter(a => a.categoria === 'Ternero' || a.categoria === 'Ternera').length || 0
-      const novillas = animales?.filter(a => a.categoria === 'Novilla').length || 0
+      // Composición del hato
+      const vacasProd = animales?.filter((a) => a.categoria === "Vaca productora" || a.categoria === "Vaca").length || 0
+      const novillas = animales?.filter((a) => a.categoria === "Novilla").length || 0
+      const toretes = animales?.filter((a) => a.categoria === "Torete").length || 0
+      const terneros = animales?.filter((a) => a.categoria === "Ternero").length || 0
+      const terneras = animales?.filter((a) => a.categoria === "Ternera").length || 0
+      const toros = animales?.filter((a) => a.categoria === "Toro").length || 0
 
-      // Producción Lechera Diaria
-      const hoy = new Date().toISOString().split('T')[0]
+      // Producción de leche
+      const hoy = new Date().toISOString().split("T")[0]
       const ayerDate = new Date()
       ayerDate.setDate(ayerDate.getDate() - 1)
-      const ayer = ayerDate.toISOString().split('T')[0]
+      const ayer = ayerDate.toISOString().split("T")[0]
 
-      const produccionHoy = leche?.filter(l => l.fecha.startsWith(hoy)).reduce((sum, l) => sum + (l.litros || 0), 0) || 0
-      const produccionAyer = leche?.filter(l => l.fecha.startsWith(ayer)).reduce((sum, l) => sum + (l.litros || 0), 0) || 0
+      const registrosHoy = leche?.filter((l) => l.fecha?.startsWith(hoy)) || []
+      const produccionHoy = registrosHoy.reduce((sum, l) => sum + (l.litros || 0), 0)
+      const produccionAyer = leche?.filter((l) => l.fecha?.startsWith(ayer)).reduce((sum, l) => sum + (l.litros || 0), 0) || 0
+
+      // Vacas ordeñadas hoy (únicas)
+      const vacasOrdenadas = new Set(registrosHoy.map((l) => l.vaca_id).filter(Boolean)).size
+      const promPorVaca = vacasOrdenadas > 0 ? produccionHoy / vacasOrdenadas : 0
 
       // KPI: Potreros
-      const potrerosCriticos = potreros?.filter(p => p.estado === 'Crítico' || p.estado === 'Malo').length || 0
+      const potrerosCriticos = potreros?.filter((p) => p.estado === "Crítico" || p.estado === "Malo").length || 0
 
       // KPI: Balance Mensual
-      const mesActual = new Date().toISOString().substring(0, 7) // "YYYY-MM"
-      const transaccionesMes = transacciones?.filter(t => t.fecha?.startsWith(mesActual)) || []
-      const ingresos = transaccionesMes.filter(t => t.tipo === 'Ingreso').reduce((sum, t) => sum + (t.monto || 0), 0)
-      const egresos = transaccionesMes.filter(t => t.tipo === 'Egreso').reduce((sum, t) => sum + (t.monto || 0), 0)
+      const mesActual = new Date().toISOString().substring(0, 7)
+      const transaccionesMes = transacciones?.filter((t) => t.fecha?.startsWith(mesActual)) || []
+      const ingresos = transaccionesMes.filter((t) => t.tipo === "Ingreso").reduce((sum, t) => sum + (t.monto || 0), 0)
+      const egresos = transaccionesMes.filter((t) => t.tipo === "Egreso").reduce((sum, t) => sum + (t.monto || 0), 0)
       const balanceMensual = ingresos - egresos
 
-      // Agregador inteligente de actividades
-      const aggregatedActivities: any[] = [];
+      // KPI: Nacimientos últimos 12 meses (por created_at de animales jóvenes o fecha_nacimiento)
+      const hace12m = new Date()
+      hace12m.setFullYear(hace12m.getFullYear() - 1)
+      const hace12mStr = hace12m.toISOString().split("T")[0]
 
-      // 1. Actividades del log manual (si existen)
+      const nacimientos12m = animales?.filter((a) => {
+        const fn = a.fecha_nacimiento || a.created_at
+        return fn && fn >= hace12mStr
+      }).length || 0
+
+      // KPI: Muertes últimos 12 meses (animales con estado 'Muerto' creados/actualizados en rango)
+      // Aproximación con estado 'Muerto' (no hay fecha_muerte en modelo visible)
+      const muertos12m = animales?.filter((a) => {
+        return a.estado === "Muerto"
+      }).length || 0
+
+      // KPI: Ventas últimos 12 meses
+      const ventas12m = transacciones?.filter((t) => {
+        return (
+          (t.tipo === "Ingreso" && (t.categoria === "Venta animal" || t.categoria === "Venta" || t.categoria === "Venta de animal")) &&
+          t.fecha >= hace12mStr
+        )
+      }).length || 0
+
+      // También contamos animales marcados como Vendido en últimos 12 meses
+      const animalesVendidos12m = animales?.filter((a) => a.estado === "Vendido").length || 0
+      const totalVentas12m = Math.max(ventas12m, animalesVendidos12m)
+
+      // GDP (Ganancia Diaria de Peso) - aproximación 30 días
+      // No tenemos tabla de pesos en la query actual; placeholder 0
+      const gdp30d = 0
+
+      // Leche semanal (últimos 7 días)
+      const lecheSemanalMap: Record<string, number> = {}
+      const dias7 = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date()
+        d.setDate(d.getDate() - (6 - i))
+        return d.toISOString().split("T")[0]
+      })
+      dias7.forEach((d) => { lecheSemanalMap[d] = 0 })
+      leche?.forEach((l) => {
+        const d = l.fecha?.split("T")[0]
+        if (d && d in lecheSemanalMap) lecheSemanalMap[d] += l.litros || 0
+      })
+      const lecheSemanal = dias7.map((d) => ({
+        date: new Date(d + "T12:00:00").toLocaleDateString("es-BO", { weekday: "short", day: "numeric" }),
+        litros: Math.round(lecheSemanalMap[d] * 10) / 10,
+      }))
+
+      // Actividades agregadas
+      const aggregatedActivities: any[] = []
+
       actividades?.forEach((act) => {
-        const timestamp = new Date(act.fecha).getTime();
+        const timestamp = new Date(act.fecha).getTime()
         if (!isNaN(timestamp)) {
-          aggregatedActivities.push({
-            id: act.uuid,
-            texto: act.descripcion || "Actividad registrada",
-            timestamp,
-            hora: new Date(act.fecha).toLocaleDateString(),
-            tipo: "log"
-          });
+          aggregatedActivities.push({ id: act.uuid, texto: act.descripcion || "Actividad registrada", timestamp, hora: new Date(act.fecha).toLocaleDateString(), tipo: "log" })
         }
-      });
-
-      // 2. Registro de animales recientes
+      })
       recentAnimals?.forEach((a) => {
-        const dateVal = a.updated_at || a.updatedAt;
-        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
-        aggregatedActivities.push({
-          id: `animal-${a.uuid}`,
-          texto: `Animal registrado: RP ${a.codigo}${a.nombre ? ` (${a.nombre})` : ''}`,
-          timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
-          tipo: "animal"
-        });
-      });
-
-      // 3. Tratamientos o eventos de salud recientes
+        const dateVal = a.updated_at
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now()
+        aggregatedActivities.push({ id: `animal-${a.uuid}`, texto: `Animal registrado: RP ${a.codigo}${a.nombre ? ` (${a.nombre})` : ""}`, timestamp, hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(), tipo: "animal" })
+      })
       recentHealth?.forEach((h) => {
-        const aId = h.animal_id || h.animalId || '';
-        const animCode = aId ? (animalMap[aId] || '') : '';
-        const dateVal = h.updated_at || h.updatedAt;
-        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
-        aggregatedActivities.push({
-          id: `health-${h.uuid}`,
-          texto: `${h.tipo_evento || h.tipoEvento || 'Tratamiento'}${animCode ? ` a RP ${animCode}` : ''}${h.medicamento ? ` con ${h.medicamento}` : ''}`,
-          timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
-          tipo: "salud"
-        });
-      });
-
-      // 4. Producción de leche reciente
+        const aId = h.animal_id || ""
+        const animCode = aId ? (animalMap[aId] || "") : ""
+        const dateVal = h.updated_at
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now()
+        aggregatedActivities.push({ id: `health-${h.uuid}`, texto: `${h.tipo_evento || "Tratamiento"}${animCode ? ` a RP ${animCode}` : ""}${h.medicamento ? ` con ${h.medicamento}` : ""}`, timestamp, hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(), tipo: "salud" })
+      })
       recentLeche?.forEach((l) => {
-        const vId = l.vaca_id || l.vacaId || '';
-        const animCode = vId ? (animalMap[vId] || '') : '';
-        const dateVal = l.updated_at || l.updatedAt;
-        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
-        aggregatedActivities.push({
-          id: `leche-${l.uuid}`,
-          texto: `Ordeño de ${l.litros} L${animCode ? ` (Vaca RP ${animCode})` : ''}`,
-          timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
-          tipo: "leche"
-        });
-      });
-
-      // 5. Transacciones financieras recientes
+        const vId = l.vaca_id || ""
+        const animCode = vId ? (animalMap[vId] || "") : ""
+        const dateVal = l.updated_at
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now()
+        aggregatedActivities.push({ id: `leche-${l.uuid}`, texto: `Ordeño de ${l.litros} L${animCode ? ` (Vaca RP ${animCode})` : ""}`, timestamp, hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(), tipo: "leche" })
+      })
       recentTrans?.forEach((t) => {
-        const dateVal = t.updated_at || t.updatedAt;
-        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now();
-        aggregatedActivities.push({
-          id: `trans-${t.uuid}`,
-          texto: `${t.tipo === 'Ingreso' ? 'Ingreso' : 'Egreso'} de Bs. ${t.monto} (${t.categoria})`,
-          timestamp,
-          hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(),
-          tipo: "transaccion"
-        });
-      });
+        const dateVal = t.updated_at
+        const timestamp = dateVal ? new Date(dateVal).getTime() : Date.now()
+        aggregatedActivities.push({ id: `trans-${t.uuid}`, texto: `${t.tipo === "Ingreso" ? "Ingreso" : "Egreso"} de Bs. ${t.monto} (${t.categoria})`, timestamp, hora: dateVal ? new Date(dateVal).toLocaleDateString() : new Date().toLocaleDateString(), tipo: "transaccion" })
+      })
 
-      // Ordenar actividades de forma cronológica descendente
-      const allSortedActivities = [...aggregatedActivities].sort((a, b) => b.timestamp - a.timestamp);
-      const sortedActivities = allSortedActivities.slice(0, 5);
+      const allSortedActivities = [...aggregatedActivities].sort((a, b) => b.timestamp - a.timestamp)
+      const sortedActivities = allSortedActivities.slice(0, 5)
 
       return {
         kpis: {
@@ -201,117 +471,163 @@ export default function DashboardPage() {
           porcentajeMachos,
           produccionAyer,
           produccionHoy,
+          vacasOrdenadas,
+          promPorVaca,
           potrerosCriticos,
-          balanceMensual
+          balanceMensual,
+          ingresos,
+          egresos,
+          nacimientos12m,
+          muertos12m,
+          totalVentas12m,
+          gdp30d,
+          vacasProd,
+          novillas,
+          toretes,
+          terneros,
+          terneras,
+          toros,
         },
-        lecheSemanal: [
-          { date: 'Ayer', litros: produccionAyer },
-          { date: 'Hoy', litros: produccionHoy }
-        ],
+        lecheSemanal,
         composicionHato: [
-          { name: 'Vacas', value: vacas, color: 'hsl(var(--primary))' },
-          { name: 'Toros', value: toros, color: '#8b5a2b' },
-          { name: 'Terneros', value: terneros, color: '#f59e0b' },
-          { name: 'Novillas', value: novillas, color: '#10b981' }
+          { name: "Vaca Prod.", value: vacasProd, color: "#16a34a" },
+          { name: "Novilla", value: novillas, color: "#ca8a04" },
+          { name: "Torete", value: toretes, color: "#ea580c" },
+          { name: "Ternero", value: terneros, color: "#2563eb" },
+          { name: "Ternera", value: terneras, color: "#7c3aed" },
+          { name: "Toro", value: toros, color: "#dc2626" },
         ],
-        flujoCaja: [
-          { name: 'Mes Actual', ingresos, egresos }
-        ],
-        actividadReciente: sortedActivities.map((act) => ({
-          id: act.id,
-          texto: act.texto,
-          hora: act.hora,
-          tipo: act.tipo
-        })),
-        todasLasActividades: allSortedActivities.map((act) => ({
-          id: act.id,
-          texto: act.texto,
-          hora: act.hora,
-          tipo: act.tipo
-        })),
-        alertasSalud: alertas?.map((alerta) => ({
-          id: alerta.uuid,
-          texto: alerta.titulo,
-          prioridad: (alerta.prioridad as string)?.toLowerCase() || 'media'
-        })) || []
+        flujoCaja: [{ name: "Mes Actual", ingresos, egresos }],
+        actividadReciente: sortedActivities.map((act) => ({ id: act.id, texto: act.texto, hora: act.hora, tipo: act.tipo })),
+        todasLasActividades: allSortedActivities.map((act) => ({ id: act.id, texto: act.texto, hora: act.hora, tipo: act.tipo })),
+        alertasSalud: alertas?.map((alerta) => ({ id: alerta.uuid, texto: alerta.titulo, prioridad: (alerta.prioridad as string)?.toLowerCase() || "media" })) || [],
       }
-    }
+    },
   })
 
   if (!dashboardData) return null
 
   const { kpis, lecheSemanal, composicionHato, flujoCaja, actividadReciente, alertasSalud } = dashboardData
 
-  const porcentajeSubidaLeche = ((kpis.produccionHoy - kpis.produccionAyer) / kpis.produccionAyer) * 100
+  const porcentajeSubidaLeche =
+    kpis.produccionAyer > 0
+      ? ((kpis.produccionHoy - kpis.produccionAyer) / kpis.produccionAyer) * 100
+      : 0
+
+  // Mapa id → valor renderizado
+  const kpiValues: Record<KpiId, { value: number; suffix?: string; prefix?: string; decimals?: number; sublabel?: string }> = {
+    animales: {
+      value: kpis.totalAnimales,
+      sublabel: `${kpis.porcentajeMachos}% machos · ${100 - kpis.porcentajeMachos}% hembras`,
+    },
+    gdp: {
+      value: kpis.gdp30d,
+      suffix: " kg/día",
+      decimals: 2,
+      sublabel: "Promedio últimos 30 días",
+    },
+    lecheHoy: {
+      value: kpis.produccionHoy,
+      suffix: " L",
+      decimals: 1,
+      sublabel: `${kpis.vacasOrdenadas} vacas ordeñadas`,
+    },
+    promPorVaca: {
+      value: kpis.promPorVaca,
+      suffix: " L",
+      decimals: 1,
+      sublabel: "Por animal productor hoy",
+    },
+    nacimientos: {
+      value: kpis.nacimientos12m,
+      sublabel: "Crías nacidas últimos 12 meses",
+    },
+    muertes: {
+      value: kpis.muertos12m,
+      sublabel: "Animales fallecidos últimos 12 meses",
+    },
+    ventas: {
+      value: kpis.totalVentas12m,
+      sublabel: "Animales vendidos últimos 12 meses",
+    },
+  }
+
+  const visibleKpis = ALL_KPIS.filter((k) => kpisVisible[k.id])
 
   return (
     <div className="flex flex-col gap-6 pb-10">
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Centro de Mando</h1>
-        <p className="text-muted-foreground">
-          Visión global reactiva. Los datos se actualizan en tiempo real desde la aplicación móvil.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground">Vista general de la finca</p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Hato</CardTitle>
-            <Beef className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold"><AnimatedNumber value={kpis.totalAnimales} /></div>
-            <p className="text-xs text-muted-foreground">
-              {kpis.porcentajeMachos}% Machos / {100 - kpis.porcentajeMachos}% Hembras
-            </p>
-          </CardContent>
-        </Card>
+      {/* KPI Row + Personalizar */}
+      <div>
+        <div className="flex items-center justify-end mb-3 relative">
+          <div className="relative">
+            <button
+              id="btn-personalizar"
+              onClick={() => setShowPersonalizar((v) => !v)}
+              className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-muted"
+            >
+              <Settings2 className="w-4 h-4" />
+              Personalizar
+            </button>
+            <AnimatePresence>
+              {showPersonalizar && (
+                <PersonalizarPanel
+                  visible={kpisVisible}
+                  onChange={toggleKpi}
+                  onClose={() => setShowPersonalizar(false)}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Producción Diaria</CardTitle>
-            <Milk className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold"><AnimatedNumber value={kpis.produccionHoy} suffix=" L" /></div>
-            <p className={`text-xs ${porcentajeSubidaLeche >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {porcentajeSubidaLeche >= 0 ? '+' : ''}{porcentajeSubidaLeche.toFixed(1)}% respecto a ayer
-            </p>
-          </CardContent>
-        </Card>
+        {/* KPI Cards */}
+        <motion.div
+          layout
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: `repeat(auto-fill, minmax(160px, 1fr))`,
+          }}
+        >
+          <AnimatePresence mode="popLayout">
+            {visibleKpis.map((kpi) => {
+              const v = kpiValues[kpi.id]
+              return (
+                <KpiCard
+                  key={kpi.id}
+                  config={kpi}
+                  value={v.value}
+                  suffix={v.suffix}
+                  prefix={v.prefix}
+                  decimals={v.decimals}
+                  sublabel={v.sublabel}
+                />
+              )
+            })}
+          </AnimatePresence>
+        </motion.div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Carga Pastoreo</CardTitle>
-            <Tractor className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold"><AnimatedNumber value={Math.round((kpis.potrerosCriticos / 12) * 100)} suffix="%" /></div>
-            <p className="text-xs text-muted-foreground">
-              {kpis.potrerosCriticos} potreros en estado crítico
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Balance Mensual</CardTitle>
-            <Wallet className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-              <AnimatedNumber value={kpis.balanceMensual} prefix="+" suffix=" Bs" />
-            </div>
-            <p className="text-xs text-muted-foreground">Flujo neto de caja</p>
-          </CardContent>
-        </Card>
+        {visibleKpis.length === 0 && (
+          <div className="text-center text-sm text-muted-foreground py-8 border border-dashed rounded-xl">
+            No hay KPIs visibles.{" "}
+            <button
+              onClick={() => setShowPersonalizar(true)}
+              className="text-primary underline"
+            >
+              Personalizar
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
       <div className="grid gap-6 md:grid-cols-7 lg:grid-cols-3">
-
-        {/* Gráficos Principales (Ocupan 2 columnas) */}
+        {/* Gráficos Principales */}
         <div className="col-span-1 md:col-span-5 lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
@@ -328,10 +644,10 @@ export default function DashboardPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                  <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px' }} />
-                  <Area type="monotone" dataKey="litros" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorLeche)" />
+                  <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                  <RechartsTooltip contentStyle={{ borderRadius: "8px" }} />
+                  <Area type="monotone" dataKey="litros" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorLeche)" name="Litros" />
                 </AreaChart>
               </ResponsiveContainer>
             </CardContent>
@@ -350,9 +666,9 @@ export default function DashboardPage() {
                       data={composicionHato}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
+                      innerRadius={55}
                       outerRadius={80}
-                      paddingAngle={5}
+                      paddingAngle={4}
                       dataKey="value"
                     >
                       {composicionHato.map((entry, index) => (
@@ -360,7 +676,7 @@ export default function DashboardPage() {
                       ))}
                     </Pie>
                     <RechartsTooltip />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" iconSize={8} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -369,15 +685,15 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Flujo de Caja (Mensual)</CardTitle>
-                <CardDescription>Ingresos vs Egresos semanales</CardDescription>
+                <CardDescription>Ingresos vs Egresos del mes actual</CardDescription>
               </CardHeader>
               <CardContent className="h-[250px] pb-6">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={flujoCaja} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                    <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                    <RechartsTooltip cursor={{ fill: 'transparent' }} />
+                    <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                    <RechartsTooltip cursor={{ fill: "transparent" }} />
                     <Bar dataKey="ingresos" fill="#10b981" radius={[4, 4, 0, 0]} name="Ingresos (Bs)" />
                     <Bar dataKey="egresos" fill="#ef4444" radius={[4, 4, 0, 0]} name="Egresos (Bs)" />
                   </BarChart>
@@ -387,43 +703,31 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Panel Lateral (Ocupa 1 columna) */}
+        {/* Panel Lateral */}
         <div className="col-span-1 md:col-span-2 lg:col-span-1 space-y-6">
-          <Card 
-            className="h-[calc(50%-12px)] cursor-pointer hover:shadow-md transition-all hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary outline-none"
+          <Card
+            className="cursor-pointer hover:shadow-md transition-all hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary outline-none"
             tabIndex={0}
-            onClick={() => {
-              setFilterType("todos");
-              setOpenAllActivities(true);
-            }}
+            onClick={() => { setFilterType("todos"); setOpenAllActivities(true) }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setFilterType("todos");
-                setOpenAllActivities(true);
-              }
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilterType("todos"); setOpenAllActivities(true) }
             }}
-            title="Presiona Enter o haz clic para ver todo el historial de actividades"
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-primary" /> Actividad Reciente
               </CardTitle>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="text-[10px] text-primary hover:text-primary/80 h-7 px-2 font-bold select-none"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFilterType("todos");
-                  setOpenAllActivities(true);
-                }}
+                onClick={(e) => { e.stopPropagation(); setFilterType("todos"); setOpenAllActivities(true) }}
               >
                 Ver Todo
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
+              <div className="space-y-5">
                 {actividadReciente.map((act) => (
                   <div key={act.id} className="flex gap-4">
                     <div className="relative mt-1">
@@ -442,23 +746,24 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="h-[calc(50%-12px)] border-red-500/20 bg-red-500/5 dark:bg-red-500/10">
+          <Card className="border-red-500/20 bg-red-500/5 dark:bg-red-500/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
                 <Syringe className="w-5 h-5" /> Alertas de Salud
               </CardTitle>
               <CardDescription className="text-red-600/80 dark:text-red-400/80">
-                Controles y tratamientos críticos que vencen hoy.
+                Controles y tratamientos críticos pendientes.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {alertasSalud.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Sin alertas activas.</p>
+                )}
                 {alertasSalud.map((alerta) => (
                   <div key={alerta.id} className="flex justify-between items-start border-b border-red-500/20 pb-3 last:border-0">
-                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                      {alerta.texto}
-                    </span>
-                    <Badge variant={alerta.prioridad === 'alta' ? 'destructive' : 'secondary'} className="text-[10px]">
+                    <span className="text-sm font-medium text-red-700 dark:text-red-300">{alerta.texto}</span>
+                    <Badge variant={alerta.prioridad === "alta" ? "destructive" : "secondary"} className="text-[10px]">
                       {alerta.prioridad}
                     </Badge>
                   </div>
@@ -467,25 +772,21 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
-
       </div>
 
-      {/* Historial Completo Dialog Pop-up */}
+      {/* Historial Dialog */}
       <Dialog open={openAllActivities} onOpenChange={setOpenAllActivities}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-background">
           <DialogHeader className="border-b pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="w-6 h-6 text-primary" />
-                <DialogTitle className="text-xl font-bold">Historial Completo de Actividades</DialogTitle>
-              </div>
+            <div className="flex items-center gap-2">
+              <Activity className="w-6 h-6 text-primary" />
+              <DialogTitle className="text-xl font-bold">Historial Completo de Actividades</DialogTitle>
             </div>
             <DialogDescription className="mt-1">
               Registro agregado de todo lo subido y modificado en el hato en tiempo real.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Filtros de Tipo */}
           <div className="flex gap-1.5 flex-wrap py-3 border-b">
             {[
               { id: "todos", label: "Todos" },
@@ -493,8 +794,8 @@ export default function DashboardPage() {
               { id: "salud", label: "💉 Salud" },
               { id: "leche", label: "🥛 Leche" },
               { id: "transaccion", label: "💰 Finanzas" },
-              { id: "log", label: "📝 Logs" }
-            ].map(f => (
+              { id: "log", label: "📝 Logs" },
+            ].map((f) => (
               <button
                 key={f.id}
                 type="button"
@@ -510,12 +811,11 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Listado de Actividades del Historial */}
           <div className="space-y-4 py-4">
             {(() => {
-              const list = (dashboardData as any).todasLasActividades || [];
-              const filtered = list.filter((act: any) => filterType === "todos" || act.tipo === filterType);
-              
+              const list = (dashboardData as any).todasLasActividades || []
+              const filtered = list.filter((act: any) => filterType === "todos" || act.tipo === filterType)
+
               if (filtered.length === 0) {
                 return (
                   <div className="py-12 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-muted/10">
@@ -527,24 +827,13 @@ export default function DashboardPage() {
               return (
                 <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
                   {filtered.map((act: any) => {
-                    let badgeColor = "";
-                    let badgeLabel = "";
-                    if (act.tipo === 'animal') {
-                      badgeColor = "bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/10";
-                      badgeLabel = "Animal";
-                    } else if (act.tipo === 'salud') {
-                      badgeColor = "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/10";
-                      badgeLabel = "Salud";
-                    } else if (act.tipo === 'leche') {
-                      badgeColor = "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/10";
-                      badgeLabel = "Leche";
-                    } else if (act.tipo === 'transaccion') {
-                      badgeColor = "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/10";
-                      badgeLabel = "Finanzas";
-                    } else {
-                      badgeColor = "bg-muted text-muted-foreground border-border";
-                      badgeLabel = "Log";
-                    }
+                    let badgeColor = ""
+                    let badgeLabel = ""
+                    if (act.tipo === "animal") { badgeColor = "bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/10"; badgeLabel = "Animal" }
+                    else if (act.tipo === "salud") { badgeColor = "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/10"; badgeLabel = "Salud" }
+                    else if (act.tipo === "leche") { badgeColor = "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/10"; badgeLabel = "Leche" }
+                    else if (act.tipo === "transaccion") { badgeColor = "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/10"; badgeLabel = "Finanzas" }
+                    else { badgeColor = "bg-muted text-muted-foreground border-border"; badgeLabel = "Log" }
 
                     return (
                       <div key={act.id} className="flex gap-4 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-all">
@@ -553,12 +842,8 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex-1 space-y-1.5 min-w-0">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <p className="text-sm font-semibold leading-tight text-foreground truncate break-words flex-1">
-                              {act.texto}
-                            </p>
-                            <Badge variant="outline" className={`text-[9px] font-bold px-1.5 py-0 shrink-0 ${badgeColor}`}>
-                              {badgeLabel}
-                            </Badge>
+                            <p className="text-sm font-semibold leading-tight text-foreground truncate flex-1">{act.texto}</p>
+                            <Badge variant="outline" className={`text-[9px] font-bold px-1.5 py-0 shrink-0 ${badgeColor}`}>{badgeLabel}</Badge>
                           </div>
                           <p className="text-xs text-muted-foreground flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {act.hora}
