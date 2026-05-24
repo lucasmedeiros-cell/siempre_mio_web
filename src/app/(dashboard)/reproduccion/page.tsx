@@ -69,6 +69,15 @@ const TIPOS_EVENTO: TipoEvento[] = [
 
 type Tab = "gestaciones" | "servicios" | "partos" | "indices"
 
+interface EventoReproductivo {
+  uuid: string
+  animalId: string
+  tipoEvento: string
+  fecha: string
+  notas: string | null
+  animal: { codigo: string; nombre: string; categoria: string } | null
+}
+
 // Duración estándar de gestación bovina: ~283 días
 const DIAS_GESTACION = 283
 
@@ -211,7 +220,7 @@ export default function ReproduccionPage() {
         return []
       }
 
-      return (data || []).map((e: any) => {
+      return (data || []).map((e: any): EventoReproductivo => {
         const aInfo = animalMap[e.animal_id] || null
         return {
           uuid: e.uuid,
