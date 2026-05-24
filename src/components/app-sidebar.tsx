@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, Settings, Tractor, Milk, Activity, BarChart3, Database, LogOut, Scale } from "lucide-react"
+import { Home, Settings, Tractor, Milk, Activity, BarChart3, Database, LogOut, Scale, Heart } from "lucide-react"
 import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
@@ -53,6 +53,11 @@ const items = [
     title: "Salud Animal",
     url: "/salud",
     icon: Activity,
+  },
+  {
+    title: "Reproducción",
+    url: "/reproduccion",
+    icon: Heart,
   },
   {
     title: "Tablero de Tareas",
