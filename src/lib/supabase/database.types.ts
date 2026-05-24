@@ -107,6 +107,8 @@ export interface Database {
           synced: boolean
           deleted: boolean
           updatedAt: string
+          tipoPasto: string | null
+          notas: string | null
         }
         Insert: Partial<Database['public']['Tables']['potreros']['Row']>
         Update: Partial<Database['public']['Tables']['potreros']['Row']>

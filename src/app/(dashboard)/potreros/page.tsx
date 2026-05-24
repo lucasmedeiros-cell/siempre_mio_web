@@ -11,10 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGlobalStore } from "@/store/global-store"
 import { differenceInDays, format } from "date-fns"
 import { toast } from "sonner"
-import { ArrowRight, Tractor, Plus, Loader2, RefreshCw, Pencil } from "lucide-react"
+import { ArrowRight, Tractor, Plus, Loader2, RefreshCw, Pencil, Trash } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
   SheetContent,
@@ -40,6 +41,10 @@ type Potrero = Database['public']['Tables']['potreros']['Row'] & {
     uuid: string
     nombre: string
     color: string
+  } | null
+  lastOccupation?: {
+    loteNombre: string
+    dias: number
   } | null
 }
 
@@ -70,8 +75,10 @@ export default function PotrerosPage() {
   const [form, setForm] = useState({
     nombre: "",
     superficieHa: "",
-    condicion: "100",
-    estado: "libre"
+    condicion: "",
+    tipoPasto: "",
+    estado: "libre",
+    notas: ""
   })
 
   // Edit potrero state
@@ -79,6 +86,9 @@ export default function PotrerosPage() {
     nombre: "",
     superficieHa: "",
     condicion: "",
+    tipoPasto: "",
+    estado: "",
+    notas: "",
     alturaPastoMetros: "",
     diasDescansoEdit: ""
   })
@@ -98,12 +108,12 @@ export default function PotrerosPage() {
         .order('nombre')
       if (potrerosError) throw potrerosError
 
-      // Fetch active occupations
+      // Fetch all occupations to retrieve active ones and history sorted by date
       const { data: occupationsData, error: occupationsError } = await (supabase
         .from('ocupaciones_potrero') as any)
         .select('*')
-        .is('fecha_salida_real', null)
         .eq('deleted', false)
+        .order('fecha_ingreso', { ascending: false })
       if (occupationsError) throw occupationsError
 
       // Fetch lotes
@@ -131,19 +141,38 @@ export default function PotrerosPage() {
 
       // Map occupations to target potreroId
       const activeOccupationsMap: Record<string, any> = {};
+      const lastOccupationsMap: Record<string, any> = {};
+
       (occupationsData || [])?.forEach((occ: any) => {
         const pId = occ.potrero_id || occ.potreroId
         const lId = occ.lote_id || occ.loteId
         if (pId && lId) {
           const lote = (lotesData || [])?.find((l: any) => l.uuid === lId)
           if (lote) {
-            activeOccupationsMap[pId] = {
-              occupationUuid: occ.uuid,
-              loteUuid: lote.uuid,
-              loteNombre: lote.nombre,
-              loteColor: lote.color,
-              fechaIngreso: occ.fecha_ingreso || occ.fechaIngreso,
-              cantidadAnimales: animalCountByLote[lote.uuid] || 0
+            const isCompleted = occ.fecha_salida_real || occ.fechaSalidaReal;
+
+            if (!isCompleted && !activeOccupationsMap[pId]) {
+              activeOccupationsMap[pId] = {
+                occupationUuid: occ.uuid,
+                loteUuid: lote.uuid,
+                loteNombre: lote.nombre,
+                loteColor: lote.color,
+                fechaIngreso: occ.fecha_ingreso || occ.fechaIngreso,
+                cantidadAnimales: animalCountByLote[lote.uuid] || 0
+              }
+            }
+
+            if (isCompleted && !lastOccupationsMap[pId]) {
+              const fin = occ.fecha_salida_real || occ.fechaSalidaReal
+              const ini = occ.fecha_ingreso || occ.fechaIngreso
+              let diff = 0
+              if (fin && ini) {
+                diff = differenceInDays(new Date(fin), new Date(ini))
+              }
+              lastOccupationsMap[pId] = {
+                loteNombre: lote.nombre,
+                dias: diff
+              }
             }
           }
         }
@@ -152,6 +181,7 @@ export default function PotrerosPage() {
       return (potrerosData || []).map((p: any) => {
         const pId = p.uuid
         const activeOcc = activeOccupationsMap[pId]
+        const lastOcc = lastOccupationsMap[pId] || null
         
         let estadoUi = 'libre'
         if (activeOcc) {
@@ -170,6 +200,8 @@ export default function PotrerosPage() {
           alturaPastoMetros: p.altura_pasto_metros || p.alturaPastoMetros || 0,
           diasDescanso: p.dias_descanso || p.diasDescanso || 0,
           fechaUltimaLiberacion: p.fecha_ultima_liberacion || p.fechaUltimaLiberacion || null,
+          tipoPasto: p.tipo_pasto || p.tipoPasto || '',
+          notas: p.notas || '',
           deleted: p.deleted,
           synced: p.synced,
           updatedAt: p.updated_at || p.updatedAt || '',
@@ -180,7 +212,8 @@ export default function PotrerosPage() {
             uuid: activeOcc.loteUuid,
             nombre: activeOcc.loteNombre,
             color: activeOcc.loteColor
-          } : null
+          } : null,
+          lastOccupation: lastOcc
         }
       }) as Potrero[]
     }
@@ -214,7 +247,7 @@ export default function PotrerosPage() {
   // 3b. Mutación para Editar Potrero
   const handleEditPotrero = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedPotrero || !editForm.nombre || !editForm.superficieHa) return
+    if (!selectedPotrero || !editForm.nombre || !editForm.superficieHa || !editForm.condicion) return
     setIsSavingEdit(true)
     try {
       const supabase = createClient()
@@ -222,9 +255,12 @@ export default function PotrerosPage() {
       const payload: Record<string, any> = {
         nombre: editForm.nombre.trim(),
         superficie_ha: parseFloat(editForm.superficieHa),
+        condicion: condRaw,
+        tipo_pasto: editForm.tipoPasto.trim() || null,
+        estado: editForm.estado === 'en_uso' ? 'Ocupado' : editForm.estado === 'descanso' ? 'Descanso' : 'Libre',
+        notas: editForm.notas.trim() || null,
         updated_at: new Date().toISOString()
       }
-      if (!isNaN(condRaw)) payload.condicion = condRaw / 100
       const alturaRaw = parseFloat(editForm.alturaPastoMetros)
       if (!isNaN(alturaRaw)) payload.altura_pasto_metros = alturaRaw
       const descRaw = parseInt(editForm.diasDescansoEdit)
@@ -257,11 +293,13 @@ export default function PotrerosPage() {
         uuid: crypto.randomUUID(),
         nombre: form.nombre,
         superficie_ha: parseFloat(form.superficieHa),
-        condicion: parseFloat(form.condicion) / 100,
+        condicion: parseFloat(form.condicion),
         estado: form.estado === 'ocupado' ? 'Ocupado' : form.estado === 'descanso' ? 'Descanso' : 'Libre',
         altura_pasto_metros: 0.2,
         dias_descanso: form.estado === 'descanso' ? 30 : 0,
         fecha_ultima_liberacion: form.estado === 'descanso' ? new Date().toISOString() : null,
+        tipo_pasto: form.tipoPasto || null,
+        notas: form.notas || null,
         deleted: false,
         synced: true,
         updated_at: new Date().toISOString()
@@ -275,8 +313,10 @@ export default function PotrerosPage() {
       setForm({
         nombre: "",
         superficieHa: "",
-        condicion: "100",
-        estado: "libre"
+        condicion: "",
+        tipoPasto: "",
+        estado: "libre",
+        notas: ""
       })
       queryClient.invalidateQueries({ queryKey: ['potreros'] })
     } catch (error: any) {
@@ -286,6 +326,27 @@ export default function PotrerosPage() {
       setIsSubmitting(false)
     }
   }
+
+  // Mutación para Eliminar Potrero (Lógico)
+  const deleteMutation = useMutation({
+    mutationFn: async (uuid: string) => {
+      const supabase = createClient()
+      const { error } = await (supabase.from('potreros') as any)
+        .update({ deleted: true, updated_at: new Date().toISOString() })
+        .eq('uuid', uuid)
+      if (error) throw error
+      return uuid
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['potreros'] })
+      toast.success("Potrero eliminado correctamente")
+      setSelectedPotrero(null)
+    },
+    onError: (err: any) => {
+      console.error(err)
+      toast.error("Error al eliminar el potrero: " + err.message)
+    }
+  })
 
   // 4. Mutación para Asignar Lote (Con opción de traslado y descanso)
   const assignLoteMutation = useMutation({
@@ -524,7 +585,7 @@ export default function PotrerosPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Tractor className="w-8 h-8 text-primary" />
+            <Tractor className="w-8 h-8 text-[#1b4d22]" />
             Mapa de Potreros
           </h1>
           <p className="text-muted-foreground">
@@ -540,82 +601,120 @@ export default function PotrerosPage() {
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
+
+          {/* Formulario de Registro en Dialog */}
           <Dialog open={openRegister} onOpenChange={setOpenRegister}>
             <DialogTrigger
               render={
-                <Button className="gap-2">
+                <Button className="gap-2 bg-[#1b4d22] hover:bg-[#143a1a] text-white">
                   <Plus className="w-4 h-4" /> Nuevo Potrero
                 </Button>
               }
             />
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-lg">
               <form onSubmit={handleCreatePotrero} className="space-y-4">
                 <DialogHeader>
                   <DialogTitle>Nuevo Potrero</DialogTitle>
-                  <DialogDescription>
-                    Registra un nuevo potrero en el sistema para control de rotación.
-                  </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="nombre">Nombre del Potrero (Requerido)</Label>
+                  {/* Nombre */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nombre">Nombre *</Label>
                     <Input
                       id="nombre"
-                      placeholder="Ej. Potrero Norte A"
+                      placeholder="Ej: Potrero Norte"
                       value={form.nombre}
                       onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                       required
+                      className="h-10"
                     />
                   </div>
 
+                  {/* Row: Superficie y Condición */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="superficieHa">Superficie (Ha)</Label>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="superficieHa">Superficie (ha)</Label>
                       <Input
                         id="superficieHa"
                         type="number"
                         step="0.01"
-                        placeholder="Ej. 12.5"
+                        placeholder="Hectáreas"
                         value={form.superficieHa}
                         onChange={(e) => setForm({ ...form, superficieHa: e.target.value })}
                         required
+                        className="h-10"
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="condicion">Condición de Pasto (%)</Label>
-                      <Input
-                        id="condicion"
-                        type="number"
-                        min="0"
-                        max="100"
-                        placeholder="Ej. 85"
-                        value={form.condicion}
-                        onChange={(e) => setForm({ ...form, condicion: e.target.value })}
-                        required
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="condicion">Condición (factor de producción) *</Label>
+                      <Select 
+                        value={form.condicion} 
+                        onValueChange={(val) => setForm({ ...form, condicion: val || "" })}
+                      >
+                        <SelectTrigger id="condicion" className="h-10">
+                          <SelectValue placeholder="Seleccionar..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="2.5">2.5</SelectItem>
+                          <SelectItem value="1">1</SelectItem>
+                          <SelectItem value="0.5">0.5</SelectItem>
+                          <SelectItem value="0.25">0.25</SelectItem>
+                          <SelectItem value="0.20">0.20</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="estado">Estado Inicial</Label>
+                  {/* Tipo de pasto */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="tipoPasto">Tipo de pasto</Label>
+                    <Input
+                      id="tipoPasto"
+                      placeholder="Ej: Brachiaria, Panicum"
+                      value={form.tipoPasto}
+                      onChange={(e) => setForm({ ...form, tipoPasto: e.target.value })}
+                      className="h-10"
+                    />
+                  </div>
+
+                  {/* Estado */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="estado">Estado</Label>
                     <Select value={form.estado} onValueChange={(val) => setForm({ ...form, estado: val || "libre" })}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecciona un estado..." />
+                      <SelectTrigger id="estado" className="h-10">
+                        <SelectValue placeholder="Seleccionar estado..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="libre">Disponible (Libre)</SelectItem>
+                        <SelectItem value="libre">Disponible</SelectItem>
                         <SelectItem value="descanso">En Descanso</SelectItem>
                         <SelectItem value="ocupado">Ocupado</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Notas */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="notas">Notas</Label>
+                    <Textarea
+                      id="notas"
+                      placeholder="Observaciones adicionales..."
+                      value={form.notas}
+                      onChange={(e) => setForm({ ...form, notas: e.target.value })}
+                      rows={4}
+                      className="resize-none"
+                    />
+                  </div>
                 </div>
 
-                <DialogFooter className="pt-2">
-                  <Button type="submit" disabled={isSubmitting} className="w-full">
-                    {isSubmitting ? "Creando..." : "Crear Potrero"}
+                <DialogFooter className="gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setOpenRegister(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting} className="bg-[#1b4d22] hover:bg-[#143a1a] text-white">
+                    {isSubmitting ? "Creando..." : "Crear potrero"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -626,7 +725,7 @@ export default function PotrerosPage() {
 
       {loadingPotreros ? (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-2">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <Loader2 className="w-8 h-8 animate-spin text-[#1b4d22]" />
           <span>Cargando datos del mapa de potreros...</span>
         </div>
       ) : potreros.length === 0 ? (
@@ -648,38 +747,27 @@ export default function PotrerosPage() {
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
           >
             {potreros.map((potrero) => {
-              let bgColor = ""
-              let statusText = ""
-              
-              if (potrero.estado === "libre") {
-                bgColor = "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-300 hover:bg-green-500/15"
-                statusText = "Disponible"
-              } else if (potrero.estado === "en_uso") {
-                bgColor = "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15"
-                statusText = "Ocupado"
-              } else {
-                bgColor = "bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/15"
-                statusText = "En Descanso"
-              }
-
               const diasOcupacion = potrero.fechaEntrada ? differenceInDays(new Date(), new Date(potrero.fechaEntrada)) : 0
-              const alertaOcupacion = diasOcupacion > 7
-
+              
               // Cálculo de descanso restante
-              let descansoRestanteMsg = ""
+              let descansoRestanteDays = 0
+              let diasPasados = 0
               if (potrero.estado === "descanso" && potrero.fechaUltimaLiberacion) {
-                const diasPasados = differenceInDays(new Date(), new Date(potrero.fechaUltimaLiberacion))
-                const restante = Math.max(0, potrero.diasDescanso - diasPasados)
-                descansoRestanteMsg = restante > 0 ? `${restante} días restantes` : "Listo para uso"
+                diasPasados = differenceInDays(new Date(), new Date(potrero.fechaUltimaLiberacion))
+                descansoRestanteDays = Math.max(0, potrero.diasDescanso - diasPasados)
               }
+
+              // Último lote y días
+              const lastLoteName = potrero.lastOccupation ? potrero.lastOccupation.loteNombre : 'ninguno'
+              const lastLoteDays = potrero.lastOccupation ? `${potrero.lastOccupation.dias}` : '—'
 
               return (
                 <motion.div 
                   key={potrero.uuid} 
                   variants={itemVariants}
                   layoutId={`card-${potrero.uuid}`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
                   onClick={() => {
                     setSelectedPotrero(potrero)
                     setDestinoId("")
@@ -690,75 +778,155 @@ export default function PotrerosPage() {
                     setEditForm({
                       nombre: potrero.nombre,
                       superficieHa: String(potrero.superficieHa || ""),
-                      condicion: String(Math.round((potrero.condicion || 0) * 100)),
+                      condicion: String(potrero.condicion || ""),
+                      tipoPasto: potrero.tipoPasto || "",
+                      estado: potrero.estado || "",
+                      notas: potrero.notas || "",
                       alturaPastoMetros: String(potrero.alturaPastoMetros || ""),
                       diasDescansoEdit: String(potrero.diasDescanso || "")
                     })
                   }}
                   className="cursor-pointer h-full"
                 >
-                  <Card className={`border-2 h-full transition-all duration-300 hover:shadow-md relative overflow-hidden flex flex-col justify-between ${bgColor}`}>
+                  <Card className="border border-border/80 bg-card rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden flex flex-col justify-between p-5 h-full">
+                    {/* Lote Color Indicator */}
                     {potrero.loteAsignado && (
                       <div 
-                        className="absolute top-0 left-0 right-0 h-1" 
+                        className="absolute top-0 left-0 right-0 h-1.5" 
                         style={{ backgroundColor: potrero.loteAsignado.color }}
                       />
                     )}
-                    <CardHeader className="pb-2 pt-4">
-                      <div className="flex justify-between items-start gap-1">
-                        <CardTitle className="text-lg font-bold truncate">{potrero.nombre}</CardTitle>
-                        <Badge variant="outline" className="bg-background/40 backdrop-blur-sm shrink-0 border-current/20 text-[10px]">
-                          {statusText}
-                        </Badge>
+
+                    <div>
+                      {/* Header: Nombre y Estado */}
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-2xl font-extrabold text-foreground leading-none">{potrero.nombre}</span>
+                        <span className={`text-[10px] font-bold tracking-wider uppercase ${
+                          potrero.estado === 'libre' 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : potrero.estado === 'descanso' 
+                            ? 'text-blue-600 dark:text-blue-400' 
+                            : 'text-amber-600 dark:text-amber-400'
+                        }`}>
+                          {potrero.estado === 'libre' ? 'DISPONIBLE' : potrero.estado === 'descanso' ? 'DESCANSO' : 'OCUPADO'}
+                        </span>
                       </div>
-                      <CardDescription className="text-current opacity-85 text-xs flex items-center gap-1.5 mt-0.5">
-                        <Tractor className="w-3.5 h-3.5 opacity-80" /> {potrero.superficieHa} Ha
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="pb-4">
-                      <div className="space-y-1.5 text-xs mt-2 border-t pt-2 border-current/10">
-                        {potrero.estado === 'en_uso' && potrero.loteAsignado ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="opacity-90">Lote Asignado:</span>
-                              <span className="font-bold flex items-center gap-1">
-                                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: potrero.loteAsignado.color }} />
-                                {potrero.loteAsignado.nombre}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="opacity-90">Carga Animal:</span>
-                              <span className="font-bold">{potrero.cantidadAnimales || 0} cabezas</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="opacity-90">Días en uso:</span>
-                              <span className={`font-bold ${alertaOcupacion ? 'text-destructive font-extrabold' : ''}`}>
-                                {diasOcupacion} días
-                              </span>
-                            </div>
-                          </>
-                        ) : potrero.estado === 'descanso' ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="opacity-90">Límite descanso:</span>
-                              <span className="font-bold">{potrero.diasDescanso} días</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="opacity-90">Estado descanso:</span>
-                              <span className="font-bold text-primary dark:text-green-400">{descansoRestanteMsg}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-[11px] opacity-75 italic py-1">
-                            Disponible para pastoreo inmediato.
-                          </div>
-                        )}
-                        <div className="flex justify-between pt-1 border-t border-dashed border-current/5">
-                          <span className="opacity-90">Condición Pasto:</span>
-                          <span className="font-bold">{(potrero.condicion * 100).toFixed(0)}%</span>
+
+                      {/* Tipo de pasto (en minúsculas) */}
+                      <div className="text-xs text-muted-foreground/80 lowercase mb-4">
+                        {potrero.tipoPasto || 'sin pasto especificado'}
+                      </div>
+
+                      {/* Grid de Superficie y Animales */}
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/70 block mb-0.5">SUPERFICIE</span>
+                          <span className="text-lg font-extrabold text-foreground">{potrero.superficieHa} ha</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/70 block mb-0.5">ANIMALES</span>
+                          <span className="text-lg font-extrabold text-foreground">{potrero.cantidadAnimales || 0}</span>
                         </div>
                       </div>
-                    </CardContent>
+
+                      {/* Caja informativa de rotación/descanso */}
+                      <div className="bg-[#faf7f2] dark:bg-[#1a1c18]/50 border border-[#e9dfcc]/50 dark:border-border/60 rounded-xl p-3.5 space-y-2 mb-4">
+                        <div className="flex justify-between text-xs font-semibold">
+                          {potrero.estado === 'descanso' ? (
+                            <>
+                              <span className="text-foreground">Descanso</span>
+                              <span className="text-green-700 dark:text-green-400">
+                                {diasPasados} / {potrero.diasDescanso} días
+                              </span>
+                            </>
+                          ) : potrero.estado === 'en_uso' ? (
+                            <>
+                              <span className="text-foreground">Ocupación</span>
+                              <span className="text-amber-700 dark:text-amber-400">
+                                {diasOcupacion} días en uso
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-foreground">Estado</span>
+                              <span className="text-green-700 dark:text-green-400">Disponible</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-300 ${
+                              potrero.estado === 'en_uso' ? 'bg-amber-500' : 'bg-[#1b4d22]'
+                            }`}
+                            style={{ 
+                              width: potrero.estado === 'descanso' && potrero.diasDescanso > 0
+                                ? `${Math.min(100, (diasPasados / potrero.diasDescanso) * 100)}%`
+                                : potrero.estado === 'libre' 
+                                ? '100%' 
+                                : `${Math.min(100, (diasOcupacion / 7) * 100)}%`
+                            }}
+                          />
+                        </div>
+
+                        {/* Info: Último lote y mensaje de disponibilidad */}
+                        <div className="text-[11px] text-muted-foreground space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500/80 inline-block" />
+                            <span>
+                              {potrero.estado === 'en_uso' && potrero.loteAsignado
+                                ? `Lote actual: ${potrero.loteAsignado.nombre}`
+                                : `Último lote: ${lastLoteName} (${lastLoteDays} días)`
+                              }
+                            </span>
+                          </div>
+                          <div className="text-[10px] font-semibold text-green-700 dark:text-green-400">
+                            {potrero.estado === 'libre' 
+                              ? 'Listo para ocupar' 
+                              : potrero.estado === 'descanso' 
+                                ? (descansoRestanteDays <= 0 ? 'Listo para ocupar' : `En recuperación (${descansoRestanteDays} días rest.)`)
+                                : 'En pastoreo activo'
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Separator & Footer Actions */}
+                    <div className="border-t border-border/60 pt-4 flex items-center justify-end gap-3 w-full">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPotrero(potrero)
+                          setOperationTab("edit")
+                          setEditForm({
+                            nombre: potrero.nombre,
+                            superficieHa: String(potrero.superficieHa || ""),
+                            condicion: String(potrero.condicion || ""),
+                            tipoPasto: potrero.tipoPasto || "",
+                            estado: potrero.estado || "",
+                            notas: potrero.notas || "",
+                            alturaPastoMetros: String(potrero.alturaPastoMetros || ""),
+                            diasDescansoEdit: String(potrero.diasDescanso || "")
+                          })
+                        }}
+                        className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-1.5 px-3"
+                      >
+                        Editar
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`¿Estás seguro de que deseas eliminar el potrero "${potrero.nombre}"?`)) {
+                            deleteMutation.mutate(potrero.uuid)
+                          }
+                        }}
+                        className="text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full px-5 py-1.5 transition-all"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </Card>
                 </motion.div>
               )
@@ -772,7 +940,7 @@ export default function PotrerosPage() {
         <SheetContent className="w-[450px] sm:w-[540px] overflow-y-auto border-l-2 bg-background">
           <SheetHeader className="border-b pb-4">
             <div className="flex items-center gap-2.5">
-              <Tractor className="w-6 h-6 text-primary" />
+              <Tractor className="w-6 h-6 text-[#1b4d22]" />
               <SheetTitle className="text-2xl font-bold">{selectedPotrero?.nombre}</SheetTitle>
             </div>
             <SheetDescription>
@@ -780,7 +948,7 @@ export default function PotrerosPage() {
             </SheetDescription>
           </SheetHeader>
 
-          {/* Tab bar: Editar siempre visible, operaciones según estado */}
+          {/* Tab bar */}
           <div className="flex rounded-lg border p-1 bg-muted/40 mt-4">
             <button
               onClick={() => setOperationTab("edit")}
@@ -860,6 +1028,22 @@ export default function PotrerosPage() {
                   }
                 </span>
               </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Tipo de Pasto</span>
+                <span className="font-semibold block text-sm">{selectedPotrero?.tipoPasto || 'Ninguno'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Condición (Factor)</span>
+                <span className="font-semibold block text-sm">{selectedPotrero?.condicion || '—'}</span>
+              </div>
+              {selectedPotrero?.notas && (
+                <div className="col-span-2 mt-1">
+                  <span className="text-muted-foreground block mb-1">Notas</span>
+                  <p className="text-xs text-muted-foreground bg-background p-2.5 rounded-lg border leading-relaxed">
+                    {selectedPotrero.notas}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Formulario de Edición */}
@@ -871,26 +1055,28 @@ export default function PotrerosPage() {
                       <Pencil className="w-4 h-4 text-primary" /> Editar Potrero
                     </h4>
                     <p className="text-xs text-muted-foreground">
-                      Modifica los datos de este potrero. Los cambios se guardarán en tiempo real.
+                      Modifica los datos de este potrero en el sistema.
                     </p>
                   </div>
 
                   <div className="space-y-3.5 pt-1">
+                    {/* Nombre */}
                     <div className="space-y-1.5">
-                      <Label htmlFor="edit-nombre" className="text-xs font-semibold">Nombre del Potrero</Label>
+                      <Label htmlFor="edit-nombre" className="text-xs font-semibold">Nombre *</Label>
                       <Input
                         id="edit-nombre"
                         value={editForm.nombre}
                         onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
-                        placeholder="Ej. Potrero Norte A"
+                        placeholder="Ej. Potrero Norte"
                         required
                         className="h-9 text-xs"
                       />
                     </div>
 
+                    {/* Row: Superficie y Condición */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="edit-superficie" className="text-xs font-semibold">Superficie (Ha)</Label>
+                        <Label htmlFor="edit-superficie" className="text-xs font-semibold">Superficie (ha)</Label>
                         <Input
                           id="edit-superficie"
                           type="number"
@@ -898,26 +1084,76 @@ export default function PotrerosPage() {
                           min="0"
                           value={editForm.superficieHa}
                           onChange={(e) => setEditForm({ ...editForm, superficieHa: e.target.value })}
-                          placeholder="Ej. 12.5"
+                          placeholder="Hectáreas"
                           required
                           className="h-9 text-xs"
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="edit-condicion" className="text-xs font-semibold">Condición Pasto (%)</Label>
-                        <Input
-                          id="edit-condicion"
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={editForm.condicion}
-                          onChange={(e) => setEditForm({ ...editForm, condicion: e.target.value })}
-                          placeholder="Ej. 85"
-                          className="h-9 text-xs"
-                        />
+                        <Label htmlFor="edit-condicion" className="text-xs font-semibold">Condición (factor de prod.) *</Label>
+                        <Select 
+                          value={editForm.condicion} 
+                          onValueChange={(val) => setEditForm({ ...editForm, condicion: val || "" })}
+                        >
+                          <SelectTrigger id="edit-condicion" className="h-9 text-xs">
+                            <SelectValue placeholder="Seleccionar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="5">5</SelectItem>
+                            <SelectItem value="2.5">2.5</SelectItem>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="0.5">0.5</SelectItem>
+                            <SelectItem value="0.25">0.25</SelectItem>
+                            <SelectItem value="0.20">0.20</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
+                    {/* Tipo de pasto */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-tipoPasto" className="text-xs font-semibold">Tipo de pasto</Label>
+                      <Input
+                        id="edit-tipoPasto"
+                        value={editForm.tipoPasto}
+                        onChange={(e) => setEditForm({ ...editForm, tipoPasto: e.target.value })}
+                        placeholder="Ej: Brachiaria, Panicum"
+                        className="h-9 text-xs"
+                      />
+                    </div>
+
+                    {/* Estado */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-estado" className="text-xs font-semibold">Estado</Label>
+                      <Select 
+                        value={editForm.estado} 
+                        onValueChange={(val) => setEditForm({ ...editForm, estado: val || "libre" })}
+                      >
+                        <SelectTrigger id="edit-estado" className="h-9 text-xs">
+                          <SelectValue placeholder="Seleccionar estado..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="libre">Disponible</SelectItem>
+                          <SelectItem value="descanso">En Descanso</SelectItem>
+                          <SelectItem value="en_uso">Ocupado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Notas */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-notas" className="text-xs font-semibold">Notas</Label>
+                      <Textarea
+                        id="edit-notas"
+                        placeholder="Observaciones adicionales..."
+                        value={editForm.notas}
+                        onChange={(e) => setEditForm({ ...editForm, notas: e.target.value })}
+                        rows={3}
+                        className="resize-none text-xs"
+                      />
+                    </div>
+
+                    {/* Campos Técnicos Ocultos / Altura */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="edit-altura" className="text-xs font-semibold">Altura Pasto (m)</Label>
@@ -933,7 +1169,7 @@ export default function PotrerosPage() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="edit-descanso" className="text-xs font-semibold">Días Descanso</Label>
+                        <Label htmlFor="edit-descanso" className="text-xs font-semibold">Días Descanso Meta</Label>
                         <Input
                           id="edit-descanso"
                           type="number"
@@ -949,7 +1185,7 @@ export default function PotrerosPage() {
 
                     <Button
                       type="submit"
-                      className="w-full text-xs h-9 gap-1.5 mt-1"
+                      className="w-full text-xs h-10 gap-1.5 mt-1 bg-[#1b4d22] hover:bg-[#143a1a] text-white"
                       disabled={isSavingEdit}
                     >
                       {isSavingEdit ? (
@@ -966,14 +1202,12 @@ export default function PotrerosPage() {
             {/* CASO 1: Potrero Ocupado (Rotación y Desocupación) */}
             {operationTab !== "edit" && selectedPotrero?.estado === 'en_uso' && (
               <div className="space-y-6">
-
-
                 {/* Sub-form 1A: Mover Lote */}
                 {operationTab === "move" && (
                   <Card className="p-4 space-y-4 border bg-card shadow-sm">
                     <div className="space-y-1">
                       <h4 className="font-semibold text-sm flex items-center gap-1">
-                        <ArrowRight className="w-4 h-4 text-primary" /> Mover Lote (Rotación)
+                        <ArrowRight className="w-4 h-4 text-[#1b4d22]" /> Mover Lote (Rotación)
                       </h4>
                       <p className="text-xs text-muted-foreground">
                         Mueve los animales del lote <strong style={{ color: selectedPotrero.loteAsignado?.color }} className="underline">{selectedPotrero.loteAsignado?.nombre}</strong> a otro potrero libre.
@@ -991,7 +1225,7 @@ export default function PotrerosPage() {
                             {potrerosLibres.length > 0 ? (
                               potrerosLibres.map(p => (
                                 <SelectItem key={p.uuid} value={p.uuid} className="text-xs">
-                                  {p.nombre} (Pasto al {(p.condicion * 100).toFixed(0)}% • {p.superficieHa} Ha)
+                                  {p.nombre} ({p.tipoPasto || 'sin pasto'} • {p.superficieHa} Ha)
                                 </SelectItem>
                               ))
                             ) : (
@@ -1019,7 +1253,7 @@ export default function PotrerosPage() {
                       </div>
 
                       <Button 
-                        className="w-full text-xs h-9 gap-1.5 mt-2" 
+                        className="w-full text-xs h-9 gap-1.5 mt-2 bg-[#1b4d22] hover:bg-[#143a1a] text-white" 
                         onClick={handleMoveBatch}
                         disabled={!destinoId || destinoId === 'none' || moveLoteMutation.isPending}
                       >
@@ -1087,7 +1321,7 @@ export default function PotrerosPage() {
                 <Card className="p-4 space-y-4 border bg-card shadow-sm">
                   <div className="space-y-1">
                     <h4 className="font-semibold text-sm flex items-center gap-1">
-                      <Plus className="w-4 h-4 text-primary" /> Asignar Lote a este Potrero
+                      <Plus className="w-4 h-4 text-[#1b4d22]" /> Asignar Lote a este Potrero
                     </h4>
                     <p className="text-xs text-muted-foreground">
                       Elige un lote de animales para que empiece a pastar en este potrero.
@@ -1144,7 +1378,7 @@ export default function PotrerosPage() {
                     )}
 
                     <Button
-                      className="w-full text-xs h-9 gap-1.5 mt-2"
+                      className="w-full text-xs h-9 gap-1.5 mt-2 bg-[#1b4d22] hover:bg-[#143a1a] text-white"
                       onClick={handleAssignLote}
                       disabled={!selectedLoteId || selectedLoteId === 'none' || assignLoteMutation.isPending}
                     >
