@@ -194,7 +194,7 @@ export default function ReproduccionPage() {
 
   // ── Eventos reproductivos ─────────────────────────────────────────────
 
-  const { data: eventos = [], isLoading } = useQuery({
+  const { data: eventos = [], isLoading } = useQuery<EventoReproductivo[]>({
     queryKey: ["eventos_reproductivos", fincaId],
     queryFn: async () => {
       const supabase = createClient()
