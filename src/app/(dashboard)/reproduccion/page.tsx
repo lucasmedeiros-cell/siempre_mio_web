@@ -191,11 +191,26 @@ export default function ReproduccionPage() {
     queryKey: ["animales_repro_select", fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from("animales")
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from("animales")
         .select("uuid, codigo, nombre, sexo, categoria")
         .eq("deleted", false)
-        .order("codigo", { ascending: true })
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query.order("codigo", { ascending: true })
       if (error) throw error
       return data || []
     },
@@ -207,26 +222,46 @@ export default function ReproduccionPage() {
     queryKey: ["eventos_reproductivos", fincaId],
     queryFn: async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
 
-      // Mapa de animales para mostrar código/nombre
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+      if (userFincaIds.length === 0) return []
+
+      // Mapa de animales para mostrar código/nombre (filtrado por finca)
       const { data: animalRows } = await supabase
         .from("animales")
         .select("uuid, codigo, nombre, categoria")
         .eq("deleted", false)
+        .in("propietario_id", userFincaIds)
 
       const animalMap: Record<string, { codigo: string; nombre: string; categoria: string }> = {}
-      ;(animalRows || []).forEach((a: any) => {
+      const animalUuids = (animalRows || []).map((a: any) => {
         animalMap[a.uuid] = {
           codigo: a.codigo,
           nombre: a.nombre || "",
           categoria: a.categoria || "",
         }
+        return a.uuid
       })
 
-      // Fetch eventos — ordenar por fecha_evento (campo real en BD)
+      if (animalUuids.length === 0) return []
+
+      // Fetch eventos filtrados por los animales de estas fincas
       const { data, error } = await (supabase.from("eventos_reproductivos") as any)
         .select("*")
         .eq("deleted", false)
+        .in("animal_id", animalUuids)
         .order("fecha_evento", { ascending: false })
 
       if (error) {
@@ -238,7 +273,6 @@ export default function ReproduccionPage() {
         uuid: e.uuid,
         animalId: e.animal_id,
         tipoEvento: e.tipo_evento,
-        // La BD almacena el campo como fecha_evento
         fechaEvento: e.fecha_evento || "",
         observacion: e.observacion || null,
         diagnostico: e.diagnostico || null,

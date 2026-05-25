@@ -130,9 +130,16 @@ export default function FinanzasPage() {
     }
   })
 
-  const handleSubmitTx = (e: React.FormEvent) => {
+  const handleSubmitTx = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formTx.monto || !formTx.fecha) return
+
+    let targetFincaId = fincaId
+    if (!targetFincaId) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) targetFincaId = user.id
+    }
 
     addTxMutation.mutate({
       tipo: formTx.tipo,
@@ -140,13 +147,20 @@ export default function FinanzasPage() {
       monto: parseFloat(formTx.monto),
       fecha: new Date(formTx.fecha).toISOString(),
       observacion: formTx.observacion || null,
-      propietarioId: fincaId || null,
+      propietarioId: targetFincaId || null,
     })
   }
 
-  const handleSubmitInv = (e: React.FormEvent) => {
+  const handleSubmitInv = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formInv.nombre || !formInv.stockActual || !formInv.stockMinimo) return
+
+    let targetFincaId = fincaId
+    if (!targetFincaId) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) targetFincaId = user.id
+    }
 
     addInvMutation.mutate({
       nombre: formInv.nombre,
@@ -154,7 +168,7 @@ export default function FinanzasPage() {
       stockActual: parseFloat(formInv.stockActual),
       stockMinimo: parseFloat(formInv.stockMinimo),
       unidad: formInv.unidad,
-      propietarioId: fincaId || null,
+      propietarioId: targetFincaId || null,
     })
   }
 
@@ -163,10 +177,26 @@ export default function FinanzasPage() {
     queryKey: ['transacciones', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase.from('transacciones')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('transacciones')
         .select('*')
         .eq('deleted', false)
-        .order('fecha', { ascending: false })
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query.order('fecha', { ascending: false })
       
       if (error) throw error
       
@@ -187,9 +217,26 @@ export default function FinanzasPage() {
     queryKey: ['insumos', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase.from('inventarios')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('inventarios')
         .select('*')
         .eq('deleted', false)
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query
       
       if (error) throw error
       

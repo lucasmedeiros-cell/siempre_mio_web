@@ -75,10 +75,23 @@ export default function ReportesPage() {
       doc.text(`Fecha de generación: ${new Date().toLocaleDateString()}`, 14, 52)
       doc.text(`Finca: ${fincaId || "Todas las fincas"}`, 14, 57)
 
-      // Data Fetching and Table Rendering
       if (targetType === 'inventario_general') {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error("No user session found")
+
         let query = (supabase.from('animales') as any).select('codigo, nombre, categoria, raza, estado').eq('deleted', false)
-        if (fincaId) query = query.eq('propietarioId', fincaId)
+        
+        if (fincaId) {
+          query = query.eq('propietario_id', fincaId)
+        } else {
+          const { data: userFincas } = await supabase
+            .from('fincas')
+            .select('id')
+            .eq('propietario_id', user.id)
+          const fincaIds = (userFincas || []).map((f: any) => f.id)
+          if (fincaIds.length === 0) return
+          query = query.in('propietario_id', fincaIds)
+        }
         
         const { data, error } = await query
         if (error) throw error

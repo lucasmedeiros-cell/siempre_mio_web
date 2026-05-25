@@ -99,12 +99,28 @@ export default function PotrerosPage() {
     queryKey: ['potreros', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      
-      // Fetch potreros
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+      if (userFincaIds.length === 0) return []
+
+      // Fetch potreros filtered by finca
       const { data: potrerosData, error: potrerosError } = await (supabase
         .from('potreros') as any)
         .select('*')
         .eq('deleted', false)
+        .in('finca_id', userFincaIds)
         .order('nombre')
       if (potrerosError) throw potrerosError
 
@@ -116,18 +132,20 @@ export default function PotrerosPage() {
         .order('fecha_ingreso', { ascending: false })
       if (occupationsError) throw occupationsError
 
-      // Fetch lotes
+      // Fetch lotes filtered by finca
       const { data: lotesData, error: lotesError } = await (supabase
         .from('lotes') as any)
         .select('*')
         .eq('deleted', false)
+        .in('finca_id', userFincaIds)
       if (lotesError) throw lotesError
 
-      // Fetch animals for counting
+      // Fetch animals for counting filtered by owner/finca
       const { data: animalsData, error: animalsError } = await (supabase
         .from('animales') as any)
         .select('uuid, lote_id')
         .eq('deleted', false)
+        .in('propietario_id', userFincaIds)
       if (animalsError) throw animalsError
 
       // Group animals per lote
@@ -221,14 +239,29 @@ export default function PotrerosPage() {
 
   // 2. Cargar Todos los Lotes
   const { data: allLotes = [] } = useQuery({
-    queryKey: ['allLotes'],
+    queryKey: ['allLotes', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await (supabase
-        .from('lotes') as any)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('lotes')
         .select('*')
         .eq('deleted', false)
-        .order('nombre')
+
+      if (fincaId) {
+        query = query.eq('finca_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('finca_id', fincaIds)
+      }
+
+      const { data, error } = await (query as any).order('nombre')
       if (error) throw error
       return (data || []).map((l: any) => ({
         uuid: l.uuid,
@@ -289,6 +322,13 @@ export default function PotrerosPage() {
     setIsSubmitting(true)
     try {
       const supabase = createClient()
+      
+      let targetFincaId = fincaId
+      if (!targetFincaId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) targetFincaId = user.id
+      }
+
       const payload = {
         uuid: crypto.randomUUID(),
         nombre: form.nombre,
@@ -300,6 +340,7 @@ export default function PotrerosPage() {
         fecha_ultima_liberacion: form.estado === 'descanso' ? new Date().toISOString() : null,
         tipo_pasto: form.tipoPasto || null,
         notas: form.notas || null,
+        finca_id: targetFincaId || null,
         deleted: false,
         synced: true,
         updated_at: new Date().toISOString()

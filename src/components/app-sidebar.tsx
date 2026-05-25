@@ -4,6 +4,8 @@ import { Home, Settings, Tractor, Milk, Activity, BarChart3, Database, LogOut, S
 import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { useGlobalStore } from "@/store/global-store"
+import { useQueryClient } from "@tanstack/react-query"
 
 import {
   Sidebar,
@@ -90,10 +92,16 @@ export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const { setFincaId } = useGlobalStore()
+  const queryClient = useQueryClient()
 
   const handleLogout = async () => {
     try {
+      // Clear react-query cache and reset Zustand state
+      queryClient.clear()
+      setFincaId(null)
       sessionStorage.clear()
+
       const { error } = await supabase.auth.signOut()
       if (error) throw error
       toast.success("Sesión cerrada correctamente")

@@ -281,12 +281,48 @@ export default function DashboardPage() {
     queryKey: ["dashboard_overview", fincaId],
     queryFn: async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        return {
+          kpis: { totalAnimales: 0, porcentajeMachos: 0, produccionAyer: 0, produccionHoy: 0, vacasOrdenadas: 0, promPorVaca: 0, potrerosCriticos: 0, balanceMensual: 0, ingresos: 0, egresos: 0, nacimientos12m: 0, muertos12m: 0, totalVentas12m: 0, gdp30d: 0, vacasProd: 0, novillas: 0, toretes: 0, terneros: 0, terneras: 0, toros: 0 },
+          lecheSemanal: [],
+          composicionHato: [],
+          flujoCaja: [],
+          actividadReciente: [],
+          todasLasActividades: [],
+          alertasSalud: []
+        }
+      }
 
-      // Usamos select('*') igual que hato/page.tsx para evitar errores si algún campo
-      // específico no existe — Supabase ignorará campos extra sin romper la query
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+
+      if (userFincaIds.length === 0) {
+        return {
+          kpis: { totalAnimales: 0, porcentajeMachos: 0, produccionAyer: 0, produccionHoy: 0, vacasOrdenadas: 0, promPorVaca: 0, potrerosCriticos: 0, balanceMensual: 0, ingresos: 0, egresos: 0, nacimientos12m: 0, muertos12m: 0, totalVentas12m: 0, gdp30d: 0, vacasProd: 0, novillas: 0, toretes: 0, terneros: 0, terneras: 0, toros: 0 },
+          lecheSemanal: [],
+          composicionHato: [],
+          flujoCaja: [],
+          actividadReciente: [],
+          todasLasActividades: [],
+          alertasSalud: []
+        }
+      }
+
       const { data: animalesRaw } = await (supabase.from("animales") as any)
         .select("uuid, codigo, nombre, sexo, categoria, estado, fecha_nacimiento, updated_at")
-        .eq("deleted", false) as { data: any[] | null }
+        .eq("deleted", false)
+        .in("propietario_id", userFincaIds) as { data: any[] | null }
+      
       // Normalizar nombres de campo (snake_case → camelCase para el app)
       const animales = (animalesRaw || []).map((a: any) => ({
         uuid: a.uuid,
@@ -299,21 +335,31 @@ export default function DashboardPage() {
         updatedAt: a.updated_at || a.updatedAt || null,
       }))
 
+      const animalUuids = (animalesRaw || []).map((a: any) => a.uuid)
+
       const { data: potreros } = await (supabase.from("potreros") as any)
         .select("estado")
-        .eq("deleted", false) as { data: any[] | null }
+        .eq("deleted", false)
+        .in("finca_id", userFincaIds) as { data: any[] | null }
 
-      const { data: leche } = await (supabase.from("registros_leche") as any)
-        .select("litros, fecha, vaca_id")
-        .eq("deleted", false) as { data: any[] | null }
+      let leche: any[] = []
+      if (animalUuids.length > 0) {
+        const { data } = await (supabase.from("registros_leche") as any)
+          .select("litros, fecha, vaca_id")
+          .eq("deleted", false)
+          .in("vaca_id", animalUuids) as { data: any[] | null }
+        leche = data || []
+      }
 
       const { data: transacciones } = await (supabase.from("transacciones") as any)
         .select("tipo, monto, fecha, categoria")
-        .eq("deleted", false) as { data: any[] | null }
+        .eq("deleted", false)
+        .in("propietario_id", userFincaIds) as { data: any[] | null }
 
       const { data: actividades } = await (supabase.from("actividades_log") as any)
         .select("uuid, descripcion, fecha")
         .eq("deleted", false)
+        .in("propietario_id", userFincaIds)
         .order("fecha", { ascending: false })
         .limit(5) as { data: any[] | null }
 
@@ -321,6 +367,7 @@ export default function DashboardPage() {
         .select("uuid, titulo, estado, prioridad")
         .eq("deleted", false)
         .eq("estado", "Pendiente")
+        .in("propietario_id", userFincaIds)
         .limit(3) as { data: any[] | null }
 
       // Actividades recientes agregadas
@@ -332,24 +379,36 @@ export default function DashboardPage() {
       const { data: recentAnimals } = await (supabase.from("animales") as any)
         .select("uuid, codigo, nombre, updated_at")
         .eq("deleted", false)
+        .in("propietario_id", userFincaIds)
         .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 
-      const { data: recentHealth } = await (supabase.from("eventos_salud") as any)
-        .select("uuid, animal_id, tipo_evento, medicamento, updated_at")
-        .eq("deleted", false)
-        .order("updated_at", { ascending: false })
-        .limit(20) as { data: any[] | null }
+      let recentHealth: any[] = []
+      if (animalUuids.length > 0) {
+        const { data } = await (supabase.from("eventos_salud") as any)
+          .select("uuid, animal_id, tipo_evento, medicamento, updated_at")
+          .eq("deleted", false)
+          .in("animal_id", animalUuids)
+          .order("updated_at", { ascending: false })
+          .limit(20) as { data: any[] | null }
+        recentHealth = data || []
+      }
 
-      const { data: recentLeche } = await (supabase.from("registros_leche") as any)
-        .select("uuid, vaca_id, litros, fecha, updated_at")
-        .eq("deleted", false)
-        .order("updated_at", { ascending: false })
-        .limit(20) as { data: any[] | null }
+      let recentLeche: any[] = []
+      if (animalUuids.length > 0) {
+        const { data } = await (supabase.from("registros_leche") as any)
+          .select("uuid, vaca_id, litros, fecha, updated_at")
+          .eq("deleted", false)
+          .in("vaca_id", animalUuids)
+          .order("updated_at", { ascending: false })
+          .limit(20) as { data: any[] | null }
+        recentLeche = data || []
+      }
 
       const { data: recentTrans } = await (supabase.from("transacciones") as any)
         .select("uuid, tipo, categoria, monto, updated_at")
         .eq("deleted", false)
+        .in("propietario_id", userFincaIds)
         .order("updated_at", { ascending: false })
         .limit(20) as { data: any[] | null }
 

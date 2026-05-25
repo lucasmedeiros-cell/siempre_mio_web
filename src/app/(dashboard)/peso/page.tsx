@@ -51,10 +51,26 @@ export default function PesoPage() {
     queryKey: ['animales_peso_select', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await (supabase.from('animales') as any)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('animales')
         .select('uuid, codigo, nombre, categoria, raza, peso_nacimiento, fecha_nacimiento, peso_actual')
         .eq('deleted', false)
-        .order('codigo', { ascending: true })
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await (query as any).order('codigo', { ascending: true })
       if (error) throw error
       return data || []
     }
@@ -65,9 +81,35 @@ export default function PesoPage() {
     queryKey: ['registros_peso', fincaId],
     queryFn: async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+      if (userFincaIds.length === 0) return []
+
+      // Fetch animales of this/these fincas first
+      const { data: animalRows } = await supabase.from('animales')
+        .select('uuid')
+        .eq('deleted', false)
+        .in('propietario_id', userFincaIds)
+
+      const animalUuids = (animalRows || []).map((a: any) => a.uuid)
+      if (animalUuids.length === 0) return []
+
       const { data, error } = await (supabase.from('registros_peso') as any)
         .select('*')
         .eq('deleted', false)
+        .in('animal_id', animalUuids)
         .order('fecha_pesaje', { ascending: false })
       if (error) throw error
       return data || []

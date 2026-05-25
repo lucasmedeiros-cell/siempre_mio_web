@@ -3,11 +3,15 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { useGlobalStore } from "@/store/global-store"
+import { useQueryClient } from "@tanstack/react-query"
 
 export function SessionSecurityProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [authorized, setAuthorized] = useState(false)
   const supabase = createClient()
+  const { setFincaId } = useGlobalStore()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const checkSession = async () => {
@@ -17,6 +21,8 @@ export function SessionSecurityProvider({ children }: { children: React.ReactNod
       if (!isSessionActive) {
         // Clear Supabase auth session
         await supabase.auth.signOut()
+        queryClient.clear()
+        setFincaId(null)
         sessionStorage.clear()
         
         // Redirect to login
@@ -28,7 +34,7 @@ export function SessionSecurityProvider({ children }: { children: React.ReactNod
     }
     
     checkSession()
-  }, [router, supabase])
+  }, [router, supabase, setFincaId, queryClient])
 
   // While checking, render a loading screen to prevent flash of protected content
   if (!authorized) {

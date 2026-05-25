@@ -76,10 +76,26 @@ export default function SaludPage() {
     queryKey: ['animales_select', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase.from('animales')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('animales')
         .select('uuid, codigo, nombre')
         .eq('deleted', false)
-        .order('codigo', { ascending: true })
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query.order('codigo', { ascending: true })
       if (error) throw error
       return data || []
     }
@@ -159,29 +175,49 @@ export default function SaludPage() {
     queryKey: ['eventos_salud', fincaId],
     queryFn: async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+      if (userFincaIds.length === 0) return []
       
       // 1. Obtener animales para mapear
       const { data: animalRows, error: animalError } = await supabase
         .from('animales')
         .select('uuid, codigo, nombre')
         .eq('deleted', false)
+        .in('propietario_id', userFincaIds)
 
       if (animalError) throw animalError
 
       // Mapeo rápido de animales
       const animalMap: Record<string, { codigo: string; nombre: string }> = {}
-      ;(animalRows || []).forEach((a: any) => {
+      const animalUuids = (animalRows || []).map((a: any) => {
         animalMap[a.uuid] = {
           codigo: a.codigo,
           nombre: a.nombre || ''
         }
+        return a.uuid
       })
+
+      if (animalUuids.length === 0) return []
 
       // 2. Obtener eventos de salud
       const { data: saludRows, error: saludError } = await (supabase
         .from('eventos_salud') as any)
         .select('*')
         .eq('deleted', false)
+        .in('animal_id', animalUuids)
         .order('fecha', { ascending: false })
 
       if (saludError) throw saludError

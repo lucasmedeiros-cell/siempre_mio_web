@@ -43,9 +43,26 @@ export default function HatoPage() {
     queryKey: ['animales', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase.from('animales')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('animales')
         .select('*')
         .eq('deleted', false)
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query
       
       if (error) throw error
 
@@ -123,9 +140,16 @@ export default function HatoPage() {
     }
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.codigo) return
+
+    let targetFincaId = fincaId
+    if (!targetFincaId) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) targetFincaId = user.id
+    }
 
     addAnimalMutation.mutate({
       codigo: form.codigo,
@@ -135,7 +159,7 @@ export default function HatoPage() {
       categoria: form.categoria,
       estado: form.estado,
       pesoActual: form.pesoActual ? parseFloat(form.pesoActual) : undefined,
-      propietarioId: fincaId || undefined,
+      propietarioId: targetFincaId || undefined,
       procedencia: "Nacimiento",
       fechaNacimiento: new Date().toISOString()
     })

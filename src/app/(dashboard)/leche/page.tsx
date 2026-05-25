@@ -28,11 +28,27 @@ export default function LecheriaPage() {
     queryKey: ['vacas_hembra_select', fincaId],
     queryFn: async () => {
       const supabase = createClient()
-      const { data, error } = await supabase.from('animales')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      let query = supabase.from('animales')
         .select('uuid, codigo, nombre')
         .eq('deleted', false)
         .eq('sexo', 'Hembra')
-        .order('codigo', { ascending: true })
+
+      if (fincaId) {
+        query = query.eq('propietario_id', fincaId)
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        const fincaIds = (userFincas || []).map((f: any) => f.id)
+        if (fincaIds.length === 0) return []
+        query = query.in('propietario_id', fincaIds)
+      }
+
+      const { data, error } = await query.order('codigo', { ascending: true })
       
       if (error) throw error
       return data || []
@@ -44,30 +60,52 @@ export default function LecheriaPage() {
     queryKey: ['produccion_leche_full', fincaId],
     queryFn: async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
       
       const hoy = new Date().toISOString().split('T')[0]
       const hace30dias = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
       
-      // 1. Obtener animales para el mapeo
+      // Resolve finca IDs
+      let userFincaIds: string[] = []
+      if (fincaId) {
+        userFincaIds = [fincaId]
+      } else {
+        const { data: userFincas } = await supabase
+          .from('fincas')
+          .select('id')
+          .eq('propietario_id', user.id)
+        userFincaIds = (userFincas || []).map((f: any) => f.id)
+      }
+      if (userFincaIds.length === 0) return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
+
+      // 1. Obtener animales de esta(s) finca(s) para el mapeo
       const { data: animalRows, error: animalError } = await supabase.from('animales')
         .select('uuid, codigo, nombre')
         .eq('deleted', false)
+        .in('propietario_id', userFincaIds)
 
       if (animalError) throw animalError
 
       const animalMap: Record<string, { codigo: string; nombre: string }> = {}
-      ;(animalRows || []).forEach((a: any) => {
+      const animalUuids = (animalRows || []).map((a: any) => {
         animalMap[a.uuid] = {
           codigo: a.codigo,
           nombre: a.nombre || ''
         }
+        return a.uuid
       })
 
-      // 2. Obtener registros de leche
+      if (animalUuids.length === 0) {
+        return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
+      }
+
+      // 2. Obtener registros de leche sólo para las vacas de esta(s) finca(s)
       const { data: registros, error: registrosError } = await supabase.from('registros_leche')
         .select('*')
         .eq('deleted', false)
         .gte('fecha', hace30dias)
+        .in('vaca_id', animalUuids)
 
       if (registrosError) throw registrosError
         

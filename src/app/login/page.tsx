@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import { useGlobalStore } from "@/store/global-store"
+import { useQueryClient } from "@tanstack/react-query"
 
 export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -17,6 +19,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const { setFincaId } = useGlobalStore()
+  const queryClient = useQueryClient()
+
+  // Clear any existing store or cache state when mounting the login page to prevent session leaks
+  useEffect(() => {
+    queryClient.clear()
+    setFincaId(null)
+    sessionStorage.clear()
+  }, [queryClient, setFincaId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
