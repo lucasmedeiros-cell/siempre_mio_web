@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useGlobalStore } from "@/store/global-store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Beef, UtensilsCrossed, Calculator, Info, TrendingUp, History } from "lucide-react"
+import { Plus, Beef, UtensilsCrossed, Calculator, Info, TrendingUp, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
@@ -30,11 +31,13 @@ interface Receta {
 }
 
 export default function ConfinamientoPage() {
+  const router = useRouter()
   const [recetas, setRecetas] = useState<Receta[]>([])
   const [loading, setLoading] = useState(true)
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
+  const [viewReceta, setViewReceta] = useState<Receta | null>(null)
   const [openRegister, setOpenRegister] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [form, setForm] = useState({
@@ -122,6 +125,19 @@ export default function ConfinamientoPage() {
     }
   }
 
+  const costoPromedioRacion = recetas.length > 0
+    ? recetas.reduce((sum, r) => sum + (r.costoTotal || 0), 0) / recetas.length
+    : 0
+
+  const parseIngredientes = (json: string): string[] => {
+    try {
+      const parsed = JSON.parse(json || '[]')
+      return Array.isArray(parsed) ? parsed.map((x) => String(x)) : []
+    } catch {
+      return []
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -132,9 +148,6 @@ export default function ConfinamientoPage() {
           </p>
         </div>
          <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2">
-            <History className="w-4 h-4" /> Historial de Carga
-          </Button>
           <Dialog open={openRegister} onOpenChange={setOpenRegister}>
             <DialogTrigger
               render={
@@ -244,8 +257,8 @@ export default function ConfinamientoPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">Bs. 0.00</div>
-            <p className="text-xs text-muted-foreground">Calculado por kg MS</p>
+            <div className="text-2xl font-bold text-green-600">Bs. {costoPromedioRacion.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">Promedio de {recetas.length} receta(s) registrada(s)</p>
           </CardContent>
         </Card>
       </div>
@@ -292,7 +305,9 @@ export default function ConfinamientoPage() {
                         </TableCell>
                         <TableCell>Bs. {receta.costoTotal.toFixed(2)}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">Ver</Button>
+                          <Button variant="ghost" size="sm" className="gap-1" onClick={() => setViewReceta(receta)}>
+                            <Eye className="w-4 h-4" /> Ver
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -320,10 +335,50 @@ export default function ConfinamientoPage() {
             <p className="text-sm text-muted-foreground max-w-[250px]">
               No hay animales asignados a programas de confinamiento en esta finca.
             </p>
-            <Button variant="outline" className="mt-4" size="sm">Asignar Lote</Button>
+            <Button variant="outline" className="mt-4" size="sm" onClick={() => router.push('/lotes')}>
+              Asignar Lote
+            </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* Dialog: Detalle de Receta */}
+      <Dialog open={!!viewReceta} onOpenChange={(o) => !o && setViewReceta(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{viewReceta?.nombre}</DialogTitle>
+            <DialogDescription>Detalle de la fórmula de ración alimenticia.</DialogDescription>
+          </DialogHeader>
+          {viewReceta && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">Proteína Total</p>
+                  <p className="text-lg font-bold">{viewReceta.proteinaTotal.toFixed(1)}%</p>
+                </div>
+                <div className="rounded-lg border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">Costo por kg</p>
+                  <p className="text-lg font-bold">Bs. {viewReceta.costoTotal.toFixed(2)}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-semibold mb-2">Ingredientes</p>
+                {parseIngredientes(viewReceta.ingredientesJson).length > 0 ? (
+                  <ul className="flex flex-wrap gap-2">
+                    {parseIngredientes(viewReceta.ingredientesJson).map((ing, i) => (
+                      <li key={i}>
+                        <Badge variant="secondary">{ing}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No se registraron ingredientes.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

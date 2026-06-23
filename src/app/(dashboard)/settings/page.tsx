@@ -8,7 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { User, Bell, Shield, MapPin, Save } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { User, Bell, Shield, MapPin, Save, Lock } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { FincaSelector } from "@/components/finca-selector"
 import { toast } from "sonner"
@@ -17,11 +26,18 @@ export default function SettingsPage() {
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
   const [notifications, setNotifications] = useState(true)
+  const [savingNotif, setSavingNotif] = useState(false)
   const [loading, setLoading] = useState(true)
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [role, setRole] = useState("Usuario")
   const [saving, setSaving] = useState(false)
+
+  // Cambio de contraseña
+  const [openPwd, setOpenPwd] = useState(false)
+  const [newPwd, setNewPwd] = useState("")
+  const [confirmPwd, setConfirmPwd] = useState("")
+  const [savingPwd, setSavingPwd] = useState(false)
 
   useEffect(() => {
     async function loadUser() {
@@ -32,6 +48,7 @@ export default function SettingsPage() {
           setFullName(user.user_metadata?.full_name || "")
           setEmail(user.email || "")
           setRole(user.user_metadata?.role || "Administrador")
+          setNotifications(user.user_metadata?.notifications ?? true)
         }
       } catch (error) {
         console.error("Error loading user:", error)
@@ -41,6 +58,49 @@ export default function SettingsPage() {
     }
     loadUser()
   }, [])
+
+  const handleToggleNotifications = async () => {
+    const next = !notifications
+    setNotifications(next)
+    setSavingNotif(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ data: { notifications: next } })
+      if (error) throw error
+      toast.success(next ? "Notificaciones activadas" : "Notificaciones desactivadas")
+    } catch (error: any) {
+      console.error("Error updating notifications:", error)
+      setNotifications(!next) // revertir en caso de error
+      toast.error("No se pudo guardar la preferencia de notificaciones")
+    } finally {
+      setSavingNotif(false)
+    }
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newPwd.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres")
+      return
+    }
+    if (newPwd !== confirmPwd) {
+      toast.error("Las contraseñas no coinciden")
+      return
+    }
+    setSavingPwd(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPwd })
+      if (error) throw error
+      toast.success("Contraseña actualizada correctamente")
+      setOpenPwd(false)
+      setNewPwd("")
+      setConfirmPwd("")
+    } catch (error: any) {
+      console.error("Error updating password:", error)
+      toast.error(error.message || "Error al actualizar la contraseña")
+    } finally {
+      setSavingPwd(false)
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -132,7 +192,54 @@ export default function SettingsPage() {
               <CardDescription>Opciones de seguridad de la cuenta.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button variant="outline" className="text-destructive hover:text-destructive hover:bg-destructive/10">Cambiar Contraseña</Button>
+              <Dialog open={openPwd} onOpenChange={setOpenPwd}>
+                <DialogTrigger
+                  render={
+                    <Button variant="outline" className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-2">
+                      <Lock className="w-4 h-4" /> Cambiar Contraseña
+                    </Button>
+                  }
+                />
+                <DialogContent className="sm:max-w-md">
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                    <DialogHeader>
+                      <DialogTitle>Cambiar Contraseña</DialogTitle>
+                      <DialogDescription>
+                        Ingresa tu nueva contraseña. Debe tener al menos 6 caracteres.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-pwd">Nueva Contraseña</Label>
+                      <Input
+                        id="new-pwd"
+                        type="password"
+                        value={newPwd}
+                        onChange={(e) => setNewPwd(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="new-password"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-pwd">Confirmar Contraseña</Label>
+                      <Input
+                        id="confirm-pwd"
+                        type="password"
+                        value={confirmPwd}
+                        onChange={(e) => setConfirmPwd(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="new-password"
+                        required
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" disabled={savingPwd} className="w-full">
+                        {savingPwd ? "Guardando..." : "Actualizar Contraseña"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         </TabsContent>
@@ -150,9 +257,14 @@ export default function SettingsPage() {
                   <Label className="text-base">Notificaciones Push</Label>
                   <p className="text-sm text-muted-foreground">Recibe alertas importantes sobre inventario y salud en tu navegador.</p>
                 </div>
-                <button 
-                  onClick={() => setNotifications(!notifications)}
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-1 ${notifications ? 'bg-primary' : 'bg-muted'}`}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={notifications}
+                  aria-label="Notificaciones Push"
+                  disabled={savingNotif}
+                  onClick={handleToggleNotifications}
+                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-1 disabled:opacity-60 ${notifications ? 'bg-primary' : 'bg-muted'}`}
                 >
                   <div className={`w-4 h-4 rounded-full bg-white transition-transform ${notifications ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>

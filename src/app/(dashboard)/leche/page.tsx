@@ -61,7 +61,7 @@ export default function LecheriaPage() {
     queryFn: async () => {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
+      if (!user) return { kpis: { total: 0, manana: 0, tarde: 0, vsAyer: null }, chartData: [], topVacas: [] }
       
       const hoy = new Date().toISOString().split('T')[0]
       const hace30dias = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
@@ -77,7 +77,7 @@ export default function LecheriaPage() {
           .eq('propietario_id', user.id)
         userFincaIds = (userFincas || []).map((f: any) => f.id)
       }
-      if (userFincaIds.length === 0) return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
+      if (userFincaIds.length === 0) return { kpis: { total: 0, manana: 0, tarde: 0, vsAyer: null }, chartData: [], topVacas: [] }
 
       // 1. Obtener animales de esta(s) finca(s) para el mapeo
       const { data: animalRows, error: animalError } = await supabase.from('animales')
@@ -97,7 +97,7 @@ export default function LecheriaPage() {
       })
 
       if (animalUuids.length === 0) {
-        return { kpis: { total: 0, manana: 0, tarde: 0 }, chartData: [], topVacas: [] }
+        return { kpis: { total: 0, manana: 0, tarde: 0, vsAyer: null }, chartData: [], topVacas: [] }
       }
 
       // 2. Obtener registros de leche sólo para las vacas de esta(s) finca(s)
@@ -126,7 +126,12 @@ export default function LecheriaPage() {
       const manana = Math.round(mananaRaw * 10) / 10
       const tarde = Math.round(tardeRaw * 10) / 10
       const totalHoy = Math.round(totalHoyRaw * 10) / 10
-      
+
+      // Comparativa contra el día anterior
+      const ayer = new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0]
+      const totalAyerRaw = regs.filter(r => r.fecha.startsWith(ayer)).reduce((sum, r) => sum + (r.litros || 0), 0)
+      const vsAyer = totalAyerRaw > 0 ? Math.round(((totalHoyRaw - totalAyerRaw) / totalAyerRaw) * 100) : null
+
       // Chart 30 días
       const diasMap: Record<string, number> = {}
       for(let i=29; i>=0; i--) {
@@ -162,11 +167,11 @@ export default function LecheriaPage() {
       const topVacas = Object.values(vacasMap).sort((a, b) => b.litrosMes - a.litrosMes).slice(0, 10)
       const maximo = topVacas.length > 0 ? topVacas[0].litrosMes : 100
       
-      return { kpis: { total: totalHoy, manana, tarde }, chartData, topVacas: topVacas.map(v => ({...v, maximo})) }
+      return { kpis: { total: totalHoy, manana, tarde, vsAyer }, chartData, topVacas: topVacas.map(v => ({...v, maximo})) }
     }
   })
   
-  const kpis = lecheData?.kpis || { total: 0, manana: 0, tarde: 0 }
+  const kpis = lecheData?.kpis || { total: 0, manana: 0, tarde: 0, vsAyer: null }
   const chartData = lecheData?.chartData || []
   const topVacas = lecheData?.topVacas || []
 
@@ -294,7 +299,11 @@ export default function LecheriaPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{Number.isInteger(kpis.total) ? kpis.total : kpis.total.toFixed(1)} L</div>
-            <p className="text-xs text-muted-foreground">+5% vs ayer</p>
+            <p className="text-xs text-muted-foreground">
+              {kpis.vsAyer === null || kpis.vsAyer === undefined
+                ? "Sin datos de ayer"
+                : `${kpis.vsAyer >= 0 ? '+' : ''}${kpis.vsAyer}% vs ayer`}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -304,7 +313,7 @@ export default function LecheriaPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{Number.isInteger(kpis.manana) ? kpis.manana : kpis.manana.toFixed(1)} L</div>
-            <p className="text-xs text-muted-foreground">56% de la producción</p>
+            <p className="text-xs text-muted-foreground">{kpis.total > 0 ? Math.round((kpis.manana / kpis.total) * 100) : 0}% de la producción</p>
           </CardContent>
         </Card>
         <Card>
@@ -314,7 +323,7 @@ export default function LecheriaPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{Number.isInteger(kpis.tarde) ? kpis.tarde : kpis.tarde.toFixed(1)} L</div>
-            <p className="text-xs text-muted-foreground">44% de la producción</p>
+            <p className="text-xs text-muted-foreground">{kpis.total > 0 ? Math.round((kpis.tarde / kpis.total) * 100) : 0}% de la producción</p>
           </CardContent>
         </Card>
       </div>

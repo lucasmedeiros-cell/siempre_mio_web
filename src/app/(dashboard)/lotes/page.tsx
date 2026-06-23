@@ -68,6 +68,18 @@ export default function LotesPage() {
     color: "#2D6A2E",
   })
 
+  // Edición y eliminación de lotes
+  const [openEdit, setOpenEdit] = useState(false)
+  const [editingLote, setEditingLote] = useState<LoteWithCount | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    nombre: "",
+    categoriaLote: "Engorde",
+    descripcion: "",
+    color: "#2D6A2E",
+  })
+  const [deletingLoteId, setDeletingLoteId] = useState<string | null>(null)
+
   // States for viewing/managing animals in lotes
   const [selectedLoteForAnimals, setSelectedLoteForAnimals] = useState<LoteWithCount | null>(null)
   const [animalsDialogOpen, setAnimalsDialogOpen] = useState(false)
@@ -360,6 +372,72 @@ export default function LotesPage() {
     }
   }
 
+  const handleOpenEdit = (lote: LoteWithCount) => {
+    setEditingLote(lote)
+    setEditForm({
+      nombre: lote.nombre,
+      categoriaLote: lote.categoriaLote || "Engorde",
+      descripcion: lote.descripcion || "",
+      color: lote.color || "#2D6A2E",
+    })
+    setOpenEdit(true)
+  }
+
+  async function handleUpdateLote(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingLote || !editForm.nombre) return
+
+    setIsEditing(true)
+    try {
+      const { error } = await (supabase.from('lotes') as any)
+        .update({
+          nombre: editForm.nombre,
+          categoria_lote: editForm.categoriaLote,
+          descripcion: editForm.descripcion || null,
+          color: editForm.color,
+          updated_at: new Date().toISOString()
+        })
+        .eq('uuid', editingLote.uuid)
+
+      if (error) throw error
+
+      toast.success("Lote actualizado correctamente")
+      setOpenEdit(false)
+      setEditingLote(null)
+      fetchLotes()
+    } catch (error) {
+      console.error("Error updating lote:", error)
+      toast.error("Error al actualizar el lote")
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  async function handleDeleteLote(lote: LoteWithCount) {
+    if (lote.animalCount > 0) {
+      toast.error(`No se puede eliminar: el lote tiene ${lote.animalCount} animal(es) asignado(s). Quítalos primero.`)
+      return
+    }
+    if (!window.confirm(`¿Eliminar el lote "${lote.nombre}"? Esta acción no se puede deshacer.`)) return
+
+    setDeletingLoteId(lote.uuid)
+    try {
+      const { error } = await (supabase.from('lotes') as any)
+        .update({ deleted: true, updated_at: new Date().toISOString() })
+        .eq('uuid', lote.uuid)
+
+      if (error) throw error
+
+      toast.success("Lote eliminado correctamente")
+      fetchLotes()
+    } catch (error) {
+      console.error("Error deleting lote:", error)
+      toast.error("Error al eliminar el lote")
+    } finally {
+      setDeletingLoteId(null)
+    }
+  }
+
   // Filter calculations for available animals
   const uniqueCategories = Array.from(
     new Set(availableAnimals.map(a => a.categoria))
@@ -589,11 +667,24 @@ export default function LotesPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/50">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => handleOpenEdit(lote)}
+                    title="Editar lote"
+                  >
                     <Pencil className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                    <Trash2 className="w-4 h-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => handleDeleteLote(lote)}
+                    disabled={deletingLoteId === lote.uuid}
+                    title="Eliminar lote"
+                  >
+                    {deletingLoteId === lote.uuid ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </Button>
                   <Button 
                     variant="outline" 
@@ -609,6 +700,83 @@ export default function LotesPage() {
           ))}
         </div>
       )}
+
+      {/* Dialog para Editar Lote */}
+      <Dialog open={openEdit} onOpenChange={setOpenEdit}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handleUpdateLote} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Editar Lote</DialogTitle>
+              <DialogDescription>
+                Actualiza los datos del lote seleccionado.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-nombre">Nombre del Lote (Requerido)</Label>
+                <Input
+                  id="edit-nombre"
+                  placeholder="Ej. Lote Engorde A"
+                  value={editForm.nombre}
+                  onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-categoriaLote">Categoría</Label>
+                <Select value={editForm.categoriaLote} onValueChange={(val) => setEditForm({ ...editForm, categoriaLote: val || "" })}>
+                  <SelectTrigger id="edit-categoriaLote">
+                    <SelectValue placeholder="Selecciona categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Engorde">Engorde</SelectItem>
+                    <SelectItem value="Lechero">Lechero</SelectItem>
+                    <SelectItem value="Cría">Cría</SelectItem>
+                    <SelectItem value="Recría">Recría</SelectItem>
+                    <SelectItem value="Secado">Secado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-descripcion">Descripción</Label>
+                <Input
+                  id="edit-descripcion"
+                  placeholder="Ej. Animales de 2 años en fase final"
+                  value={editForm.descripcion}
+                  onChange={(e) => setEditForm({ ...editForm, descripcion: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Color Representativo</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {PALETTE_COLORS.map((col) => (
+                    <button
+                      key={col.hex}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, color: col.hex })}
+                      className={`h-8 w-8 rounded-full border-2 transition-all ${
+                        editForm.color === col.hex ? "border-primary scale-110 shadow" : "border-transparent"
+                      }`}
+                      style={{ backgroundColor: col.hex }}
+                      title={col.label}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-4">
+              <Button type="submit" disabled={isEditing} className="w-full">
+                {isEditing ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog para Ver y Asignar Animales al Lote */}
       <Dialog open={animalsDialogOpen} onOpenChange={setAnimalsDialogOpen}>

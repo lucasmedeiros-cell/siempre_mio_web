@@ -23,6 +23,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface Tarea {
   uuid: string
@@ -43,6 +52,7 @@ export default function TareasPage() {
   const [tareas, setTareas] = useState<Tarea[]>([])
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [filterPrioridad, setFilterPrioridad] = useState("Todas")
   const { fincaId } = useGlobalStore()
   const supabase = createClient()
 
@@ -205,8 +215,12 @@ export default function TareasPage() {
     })
   }
 
+  const visibleTareas = filterPrioridad === "Todas"
+    ? tareas
+    : tareas.filter(t => t.prioridad === filterPrioridad)
+
   const getTasksForDateStr = (dateStr: string) => {
-    return tareas.filter(t => {
+    return visibleTareas.filter(t => {
       if (!t.fechaLimite) return false
       return t.fechaLimite.split('T')[0] === dateStr
     })
@@ -222,9 +236,26 @@ export default function TareasPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Filter className="w-4 h-4" /> Filtros
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Filter className="w-4 h-4" />
+                  {filterPrioridad === "Todas" ? "Filtros" : `Prioridad: ${filterPrioridad}`}
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Filtrar por prioridad</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={filterPrioridad} onValueChange={(v) => setFilterPrioridad(v || "Todas")}>
+                <DropdownMenuRadioItem value="Todas">Todas</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="Alta">Alta</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="Media">Media</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="Baja">Baja</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Dialog open={openRegister} onOpenChange={setOpenRegister}>
             <DialogTrigger
               render={
@@ -331,7 +362,7 @@ export default function TareasPage() {
                     <column.icon className={`w-5 h-5 ${column.color}`} />
                     <h3 className="font-semibold">{column.title}</h3>
                     <Badge variant="secondary" className="ml-2 bg-background">
-                      {tareas.filter(t => t.estado === column.id).length}
+                      {visibleTareas.filter(t => t.estado === column.id).length}
                     </Badge>
                   </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpenRegister(true)}>
@@ -345,7 +376,7 @@ export default function TareasPage() {
                       <Card key={i} className="animate-pulse h-24 bg-muted/50" />
                     ))
                   ) : (
-                    tareas
+                    visibleTareas
                       .filter(t => t.estado === column.id)
                       .map((tarea) => (
                         <Card
