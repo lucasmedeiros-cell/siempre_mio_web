@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -21,6 +21,20 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Siempre Mío - Web Dashboard",
   description: "Plataforma administrativa empresarial para la gestión ganadera",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Siempre Mío",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2D6A2E",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

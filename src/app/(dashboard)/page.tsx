@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +12,7 @@ import {
 } from "recharts"
 import {
   Beef, Milk, Tractor, Wallet, Activity, Syringe, Clock,
-  Settings2, TrendingUp, Baby, Skull, ShoppingCart, Droplets, Eye, EyeOff, X
+  Settings2, TrendingUp, Baby, Skull, ShoppingCart, Droplets, Eye, EyeOff, X, ChevronRight
 } from "lucide-react"
 import { useGlobalStore } from "@/store/global-store"
 import { createClient } from "@/lib/supabase/client"
@@ -42,6 +43,7 @@ interface KpiConfig {
   sublabel: string
   icon: React.ReactNode
   color: string
+  href: string
 }
 
 const ALL_KPIS: KpiConfig[] = [
@@ -51,6 +53,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Total en finca",
     icon: <Beef className="h-4 w-4" />,
     color: "text-emerald-600 dark:text-emerald-400",
+    href: "/hato",
   },
   {
     id: "gdp",
@@ -58,6 +61,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Promedio últimos 30 días",
     icon: <TrendingUp className="h-4 w-4" />,
     color: "text-violet-600 dark:text-violet-400",
+    href: "/peso",
   },
   {
     id: "lecheHoy",
@@ -65,6 +69,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "0 vacas ordeñadas",
     icon: <Droplets className="h-4 w-4" />,
     color: "text-blue-600 dark:text-blue-400",
+    href: "/leche",
   },
   {
     id: "promPorVaca",
@@ -72,6 +77,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Por animal productor hoy",
     icon: <Milk className="h-4 w-4" />,
     color: "text-cyan-600 dark:text-cyan-400",
+    href: "/leche",
   },
   {
     id: "nacimientos",
@@ -79,6 +85,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Crías nacidas últimos 12 meses",
     icon: <Baby className="h-4 w-4" />,
     color: "text-green-600 dark:text-green-400",
+    href: "/reproduccion",
   },
   {
     id: "muertes",
@@ -86,6 +93,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Animales fallecidos últimos 12 meses",
     icon: <Skull className="h-4 w-4" />,
     color: "text-red-600 dark:text-red-400",
+    href: "/salud",
   },
   {
     id: "ventas",
@@ -93,6 +101,7 @@ const ALL_KPIS: KpiConfig[] = [
     sublabel: "Animales vendidos últimos 12 meses",
     icon: <ShoppingCart className="h-4 w-4" />,
     color: "text-amber-600 dark:text-amber-400",
+    href: "/finanzas",
   },
 ]
 
@@ -161,22 +170,25 @@ function KpiCard({
       exit={{ opacity: 0, scale: 0.88 }}
       transition={{ duration: 0.25 }}
     >
-      <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
-        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-1 pt-3 px-4">
-          <p className={`text-[10px] font-bold tracking-wider uppercase ${config.color} opacity-80`}>
-            {config.label}
-          </p>
-          <span className={`${config.color} opacity-70`}>{config.icon}</span>
-        </CardHeader>
-        <CardContent className="px-4 pb-3">
-          <div className={`text-2xl font-extrabold tracking-tight ${config.color}`}>
-            <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
-            {sublabel ?? config.sublabel}
-          </p>
-        </CardContent>
-      </Card>
+      <Link href={config.href} className="block group focus-visible:outline-none">
+        <Card className="relative overflow-hidden transition-all group-hover:shadow-md group-hover:border-primary/40 group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-primary/50 cursor-pointer h-full">
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-1 pt-3 px-4">
+            <p className={`text-[10px] font-bold tracking-wider uppercase ${config.color} opacity-80`}>
+              {config.label}
+            </p>
+            <span className={`${config.color} opacity-70`}>{config.icon}</span>
+          </CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className={`text-2xl font-extrabold tracking-tight ${config.color}`}>
+              <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+              {sublabel ?? config.sublabel}
+            </p>
+          </CardContent>
+          <ChevronRight className="absolute bottom-2 right-2 h-3.5 w-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </Card>
+      </Link>
     </motion.div>
   )
 }
@@ -662,7 +674,7 @@ export default function DashboardPage() {
           layout
           className="grid gap-3"
           style={{
-            gridTemplateColumns: `repeat(auto-fill, minmax(160px, 1fr))`,
+            gridTemplateColumns: `repeat(auto-fill, minmax(140px, 1fr))`,
           }}
         >
           <AnimatePresence mode="popLayout">
